@@ -159,14 +159,6 @@ async def _execute_tool(state: GenerationState, name: str, args: dict) -> str:
         _output_guardrail_check(state, path, content)
         with SessionLocal() as db:
             write_file(db, state["project_id"], workspace, path, content)
-        await _emit(
-            state,
-            {
-                "type": "tool_call",
-                "tool": "write_file",
-                "args": {"path": path},
-            },
-        )
         await _emit(state, {"type": "file_written", "path": path})
         return json.dumps({"ok": True, "path": path}, ensure_ascii=False)
     if name == "edit_file":
@@ -177,10 +169,6 @@ async def _execute_tool(state: GenerationState, name: str, args: dict) -> str:
                 edit_file(db, state["project_id"], workspace, path, old, new)
         except Exception as exc:
             return json.dumps({"error": f"{type(exc).__name__}: {exc}"}, ensure_ascii=False)
-        await _emit(
-            state,
-            {"type": "tool_call", "tool": "edit_file", "args": {"path": path}},
-        )
         await _emit(state, {"type": "file_written", "path": path})
         return json.dumps({"ok": True, "path": path}, ensure_ascii=False)
     if name == "run_command":
@@ -191,14 +179,6 @@ async def _execute_tool(state: GenerationState, name: str, args: dict) -> str:
             code, output = await run_command(command, workspace, timeout=180)
         except BuildError as exc:
             return json.dumps({"error": str(exc)}, ensure_ascii=False)
-        await _emit(
-            state,
-            {
-                "type": "tool_call",
-                "tool": "run_command",
-                "args": {"command": command},
-            },
-        )
         return json.dumps(
             {"exit_code": code, "output": output[-4000:]}, ensure_ascii=False
         )
@@ -223,20 +203,46 @@ async def run_generation_agent(
 
     for step in range(max_iterations):
         _check_cancel(state)
-        message = await llm.complete_with_tools(messages, TOOL_SCHEMAS)
+        async def on_reasoning(piece: str) -> None:
+            await _emit(state, {"type": "reasoning_delta", "text": piece})
+
+        async def on_content(piece: str) -> None:
+            await _emit(state, {"type": "assistant_delta", "text": piece})
+
+        message = await llm.stream_complete_with_tools(
+            messages,
+            TOOL_SCHEMAS,
+            on_reasoning=on_reasoning,
+            on_content=on_content,
+        )
         usage = message.get("usage") or {}
         token_usage["prompt_tokens"] += int(usage.get("prompt_tokens") or 0)
         token_usage["completion_tokens"] += int(usage.get("completion_tokens") or 0)
 
         reasoning = (message.get("reasoning_content") or "").strip()
         content = (message.get("content") or "").strip()
-        if reasoning:
-            await _emit(state, {"type": "thought", "content": reasoning[:300]})
-        if content:
-            await _emit(state, {"type": "thought", "content": content[:300]})
 
         tool_calls = message.get("tool_calls") or []
         if not tool_calls:
+            content = (message.get("content") or "").strip()
+            # 模型可能直接用正文给出交付总结而不是调用 finish，首轮后视为完成
+            if content and step > 0:
+                state["summary"] = content
+                files = list_files(workspace)
+                state["files"] = files
+                await _emit(
+                    state,
+                    {
+                        "type": "thought",
+                        "content": f"生成完成：共 {len(files)} 个文件，工具轮次 {step + 1}",
+                    },
+                )
+                return {
+                    "files": files,
+                    "summary": content,
+                    "status": "generating",
+                    "token_usage": token_usage,
+                }
             messages.append(
                 {
                     "role": "assistant",
@@ -289,15 +295,37 @@ async def run_generation_agent(
                 }
 
             try:
+                safe_args = _safe_tool_args(name, args)
+                await _emit(
+                    state,
+                    {
+                        "type": "tool_call_started",
+                        "tool": name,
+                        "args": safe_args,
+                    },
+                )
                 result = await _execute_tool(state, name, args)
             except GenerationBlocked as exc:
                 result = json.dumps({"error": str(exc)}, ensure_ascii=False)
+                ok = False
             except GenerationCancelled:
                 raise
             except Exception as exc:
                 result = json.dumps(
                     {"error": f"{type(exc).__name__}: {exc}"}, ensure_ascii=False
                 )
+                ok = False
+            else:
+                ok = _is_ok(result)
+            await _emit(
+                state,
+                {
+                    "type": "tool_call_completed",
+                    "tool": name,
+                    "ok": ok,
+                    "detail": _tool_result_detail(name, args),
+                },
+            )
             messages.append(
                 {
                     "role": "tool",
@@ -316,3 +344,33 @@ async def run_generation_agent(
     raise GenerationFailed(
         f"生成未在 {max_iterations} 轮工具调用内完成，已停止避免无限循环"
     )
+
+
+def _safe_tool_args(name: str, args: dict) -> dict:
+    if name in ("write_file", "edit_file", "read_file"):
+        return {"path": args.get("path", "")}
+    if name == "run_command":
+        return {"command": args.get("command") or []}
+    return {}
+
+
+def _tool_result_detail(name: str, args: dict) -> str:
+    if name in ("write_file", "edit_file", "read_file"):
+        return str(args.get("path", ""))
+    if name == "run_command":
+        return " ".join(args.get("command") or [])
+    return ""
+
+
+def _is_ok(result: str) -> bool:
+    try:
+        data = json.loads(result)
+    except json.JSONDecodeError:
+        return False
+    if isinstance(data, dict):
+        if data.get("error"):
+            return False
+        exit_code = data.get("exit_code")
+        if exit_code is not None:
+            return exit_code == 0
+    return True

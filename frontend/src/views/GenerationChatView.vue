@@ -59,7 +59,7 @@
 
               <!-- AI 消息 -->
               <div v-else-if="entry.kind === 'assistant'" class="chat-msg">
-                <div class="bubble">
+                <div class="bubble" :class="{ streaming: entry.streaming }">
                   <span class="who mono">灵码</span>
                   <p>{{ entry.content }}</p>
                 </div>
@@ -78,14 +78,20 @@
               <div
                 v-else-if="entry.kind === 'think'"
                 class="entry collapsible"
-                :class="{ open: !entry.collapsed }"
+                :class="{ open: !entry.collapsed, streaming: entry.streaming }"
                 role="button"
                 tabindex="0"
                 @click="entry.collapsed = !entry.collapsed"
                 @keydown.enter="entry.collapsed = !entry.collapsed"
               >
-                <span class="entry-icon think"><ToolIcon name="think" /></span>
+                <span class="entry-icon think">
+                  <span v-if="entry.streaming" class="spinner-ring amber" />
+                  <ToolIcon v-else name="think" />
+                </span>
                 <span class="entry-title">思考</span>
+                <span v-if="entry.streaming" class="entry-hint streaming-hint">
+                  思考中…
+                </span>
                 <span class="chevron" aria-hidden="true">
                   {{ entry.collapsed ? "▸" : "▾" }}
                 </span>
@@ -93,10 +99,22 @@
               </div>
 
               <!-- 工具调用 -->
-              <div v-else-if="entry.kind === 'tool'" class="entry tool-entry">
-                <span class="entry-icon"><ToolIcon :name="toolIcon(entry.tool)" /></span>
+              <div
+                v-else-if="entry.kind === 'tool'"
+                class="entry tool-entry"
+                :class="{ pending: entry.pending, fail: entry.ok === false }"
+              >
+                <span class="entry-icon">
+                  <span v-if="entry.pending" class="spinner-ring" />
+                  <ToolIcon
+                    v-else
+                    :name="entry.ok === false ? 'alert' : toolIcon(entry.tool)"
+                  />
+                </span>
                 <span class="mono tool-name">{{ toolLabel(entry.tool) }}</span>
+                <span v-if="entry.pending" class="entry-hint">调用中…</span>
                 <span v-if="entry.detail" class="entry-detail mono">{{ entry.detail }}</span>
+                <span v-if="entry.ok === false" class="entry-hint fail-hint">失败</span>
               </div>
 
               <!-- 写入文件 -->
@@ -227,6 +245,9 @@ interface ChatEntry {
   detail?: string;
   lines?: string[];
   collapsed?: boolean;
+  streaming?: boolean;
+  pending?: boolean;
+  ok?: boolean;
 }
 
 const route = useRoute();
@@ -240,12 +261,15 @@ const runningGen = ref<Generation | null>(null);
 const progressStage = ref("parse");
 const submitting = ref(false);
 const previewRefresh = ref(0);
+const streamTick = ref(0);
 const chatListRef = ref<HTMLElement | null>(null);
 let eventSource: EventSource | null = null;
 let seq = 0;
 
 function push(partial: Omit<ChatEntry, "id">) {
-  entries.value.push({ id: ++seq, collapsed: true, ...partial });
+  const entry: ChatEntry = { id: ++seq, collapsed: true, ...partial };
+  entries.value.push(entry);
+  return entry;
 }
 
 async function scrollToBottom() {
@@ -256,6 +280,15 @@ async function scrollToBottom() {
 }
 
 watch(() => entries.value.length, scrollToBottom);
+watch(streamTick, scrollToBottom);
+
+function bumpStream() {
+  streamTick.value += 1;
+}
+
+function lastEntry() {
+  return entries.value[entries.value.length - 1];
+}
 
 const genStateLabel = computed(() => {
   if (!runningGen.value) return "待命";
@@ -358,10 +391,74 @@ function watchGeneration(genId: number) {
     const event = JSON.parse((e as MessageEvent).data) as SseEvent;
     const content = String(event.content || "").trim();
     if (content) {
-      push({ kind: "think", content });
+      push({ kind: "think", content, collapsed: false });
     }
   });
 
+  eventSource.addEventListener("reasoning_delta", (e) => {
+    const event = JSON.parse((e as MessageEvent).data) as SseEvent;
+    const text = String(event.text || "");
+    if (!text) return;
+    let entry = lastEntry();
+    if (entry?.kind !== "think" || !entry.streaming) {
+      entry = push({
+        kind: "think",
+        content: "",
+        streaming: true,
+        collapsed: false,
+      });
+    }
+    entry.content = (entry.content || "") + text;
+    bumpStream();
+  });
+
+  eventSource.addEventListener("assistant_delta", (e) => {
+    const event = JSON.parse((e as MessageEvent).data) as SseEvent;
+    const text = String(event.text || "");
+    if (!text) return;
+    let entry = lastEntry();
+    if (entry?.kind !== "assistant" || !entry.streaming) {
+      entry = push({
+        kind: "assistant",
+        content: "",
+        streaming: true,
+        collapsed: false,
+      });
+    }
+    entry.content = (entry.content || "") + text;
+    bumpStream();
+  });
+
+  eventSource.addEventListener("tool_call_started", (e) => {
+    const event = JSON.parse((e as MessageEvent).data) as SseEvent;
+    const tool = String(event.tool || "");
+    const args = (event.args || {}) as Record<string, unknown>;
+    let detail = "";
+    if (typeof args.path === "string") detail = args.path;
+    else if (Array.isArray(args.command)) detail = args.command.join(" ");
+    const previous = lastEntry();
+    if (previous?.kind === "think" && previous.streaming) {
+      previous.streaming = false;
+    }
+    push({ kind: "tool", tool, detail, pending: true });
+    bumpStream();
+  });
+
+  eventSource.addEventListener("tool_call_completed", (e) => {
+    const event = JSON.parse((e as MessageEvent).data) as SseEvent;
+    const tool = String(event.tool || "");
+    const entry = [...entries.value]
+      .reverse()
+      .find((item) => item.kind === "tool" && item.tool === tool && item.pending);
+    if (entry) {
+      entry.pending = false;
+      entry.ok = event.ok !== false;
+      if (!entry.detail && event.detail) entry.detail = String(event.detail);
+    }
+    bumpStream();
+  });
+
+  // mock 模式兼容：单条 tool_call 事件（无 started/completed）
   eventSource.addEventListener("tool_call", (e) => {
     const event = JSON.parse((e as MessageEvent).data) as SseEvent;
     const tool = String(event.tool || "");
@@ -369,7 +466,8 @@ function watchGeneration(genId: number) {
     let detail = "";
     if (typeof args.path === "string") detail = args.path;
     else if (Array.isArray(args.command)) detail = args.command.join(" ");
-    push({ kind: "tool", tool, detail });
+    push({ kind: "tool", tool, detail, pending: false, ok: true });
+    bumpStream();
   });
 
   eventSource.addEventListener("file_written", (e) => {
@@ -393,7 +491,14 @@ function watchGeneration(genId: number) {
 
   eventSource.addEventListener("completed", (e) => {
     const event = JSON.parse((e as MessageEvent).data) as SseEvent;
-    push({ kind: "assistant", content: String(event.summary || "") });
+    const summary = String(event.summary || "");
+    const previous = lastEntry();
+    if (previous?.kind === "assistant" && previous.streaming) {
+      previous.content = summary;
+      previous.streaming = false;
+    } else {
+      push({ kind: "assistant", content: summary, collapsed: false });
+    }
     progressStage.value = "done";
     eventSource?.close();
     previewRefresh.value += 1;
@@ -780,6 +885,56 @@ async function cancel() {
   min-width: 0;
   min-height: 0;
   padding: 16px 16px 16px 0;
+}
+
+/* 流式与工具状态 */
+.spinner-ring {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid var(--line-strong);
+  border-top-color: var(--primary);
+  animation: spin 0.7s linear infinite;
+  display: inline-block;
+}
+.spinner-ring.amber {
+  border-top-color: var(--amber);
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.tool-entry.pending {
+  background: var(--amber-soft);
+  border-color: rgba(242, 169, 59, 0.4);
+}
+.tool-entry.fail {
+  background: var(--red-soft);
+  border-color: rgba(224, 91, 91, 0.35);
+}
+.fail-hint {
+  color: var(--red);
+  font-weight: 600;
+}
+.streaming-hint {
+  color: #b97f1c;
+  font-weight: 500;
+}
+.entry.streaming {
+  border-color: rgba(242, 169, 59, 0.45);
+  background: var(--amber-soft);
+}
+.bubble.streaming p::after {
+  content: "▍";
+  color: var(--primary);
+  margin-left: 1px;
+  animation: blink 1s steps(2) infinite;
+}
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
 }
 
 /* 响应式：窄屏上下堆叠 */

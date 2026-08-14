@@ -1,5 +1,5 @@
 # PROJECT_STATE
-更新于：2026-08-15 03:00（每轮结束必须更新）
+更新于：2026-08-15 03:40（每轮结束必须更新）
 
 ## 当前里程碑
 - 里程碑：M1（骨架与核心生成回路）
@@ -69,6 +69,15 @@
 - [x] 修复生成对话页白屏：GenerationChatView 使用了 computed 但漏导入（vite build
       不做类型检查导致构建通过、运行时崩溃）；已补导入并接入 vue-tsc 类型门禁
       （npm run typecheck），构建脚本改为 typecheck && vite build
+- [x] LLM 真实流式输出：DeepSeek 走 SSE stream，reasoning_content/content 逐字推送
+      （reasoning_delta / assistant_delta，完整不截断）
+- [x] 工具调用两段事件：tool_call_started（前端转圈“调用中…”）→ tool_call_completed
+      （成功/失败标记）；写文件仍发 file_written
+- [x] 前端对话流流式渲染：思考默认展开、逐字追加+光标闪烁，可点击折叠；工具条目转圈→图标；
+      模型首轮后直接给正文总结时自动视为完成（不再空转到轮次耗尽）
+- [x] 修复事件总线 asyncio.Lock 跨事件循环挂起（改用线程锁，短操作安全）
+- [x] 真实冒烟：469 个 reasoning_delta（2005 字符思考）+ 93 个 assistant_delta +
+      6 次工具 started/completed + 3 文件写入 → succeeded；pytest 38 passed
 
 ## 进行中 / 下一步
 - [ ] 下一步：M2 预览点选修改（ElementPicker、修改工作流、版本快照/回滚、diff 面板）
@@ -95,6 +104,8 @@
 - Agent 轮次上限默认 10（AI_LINGMA_AGENT_MAX_ITERATIONS）；run_command 走白名单+超时
 - 预览鉴权：preview_token Cookie（path=/preview，前端 JS 写入，非 HttpOnly）；
   仅限本地/内网开发，M4/M6 部署隔离时升级为 HttpOnly + 严格 CSP
+- SSE 事件扩展：reasoning_delta / assistant_delta / tool_call_started /
+  tool_call_completed（原有事件保留兼容）
 - 管理员设置（注册开关/配额）暂为内存态，重启恢复 env 默认值；M5 做持久化
 - 登录为无状态 JWT，logout 仅前端丢弃令牌；黑名单在 M5 补齐
 - 项目删除先停任务（当前无任务）再清理库记录与工作区目录

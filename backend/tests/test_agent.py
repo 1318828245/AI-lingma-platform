@@ -6,6 +6,7 @@ import pytest
 from app.agents.generation.agent import run_generation_agent
 from app.agents.generation.state import GenerationState
 from app.core.config import get_settings
+from app.services.events import get_broker
 from app.services.llm import LLMClient
 
 
@@ -81,11 +82,28 @@ def test_agent_loop_writes_files_and_finishes(
         },
     ]
 
-    async def fake_complete(messages, tools, temperature=0.2):
+    async def fake_complete(
+        self, messages, tools, on_reasoning=None, on_content=None, temperature=0.2
+    ):
+        if on_reasoning:
+            await on_reasoning("这是流式思考内容")
         return calls.pop(0)
 
-    monkeypatch.setattr(LLMClient, "complete_with_tools", fake_complete)
-    result = asyncio.run(run_generation_agent(state))
+    monkeypatch.setattr(LLMClient, "stream_complete_with_tools", fake_complete)
+
+    async def scenario():
+        broker = get_broker()
+        queue = await broker.subscribe(state["generation_id"])
+        try:
+            result = await run_generation_agent(state)
+        finally:
+            await broker.unsubscribe(state["generation_id"], queue)
+        events = []
+        while not queue.empty():
+            events.append(queue.get_nowait())
+        return result, events
+
+    result, events = asyncio.run(scenario())
 
     ws = get_settings().workspace_dir / str(project["id"])
     assert (ws / "index.html").exists()
@@ -93,6 +111,12 @@ def test_agent_loop_writes_files_and_finishes(
     assert result["summary"] == "页面已生成"
     assert "index.html" in result["files"]
     assert result["token_usage"] == {"prompt_tokens": 15, "completion_tokens": 8}
+    types = {e["type"] for e in events}
+    assert "reasoning_delta" in types
+    assert "tool_call_started" in types
+    assert "tool_call_completed" in types
+    assert "file_written" in types
+    assert any(e.get("type") == "reasoning_delta" and e.get("text") for e in events)
 
 
 def test_agent_guardrail_blocks_dangerous_write(
@@ -106,7 +130,9 @@ def test_agent_guardrail_blocks_dangerous_write(
     me = client.get("/api/users/me", headers=admin_headers).json()
     state = _make_state(project["id"], me["id"])
 
-    async def fake_complete(messages, tools, temperature=0.2):
+    async def fake_complete(
+        self, messages, tools, on_reasoning=None, on_content=None, temperature=0.2
+    ):
         return {
             "content": None,
             "tool_calls": [
@@ -127,7 +153,7 @@ def test_agent_guardrail_blocks_dangerous_write(
             "usage": {"prompt_tokens": 1, "completion_tokens": 1},
         }
 
-    monkeypatch.setattr(LLMClient, "complete_with_tools", fake_complete)
+    monkeypatch.setattr(LLMClient, "stream_complete_with_tools", fake_complete)
     with pytest.raises(Exception) as exc:
         # 假 LLM 只返回一个危险写入，没有 finish → 轮次耗尽抛 GenerationFailed
         asyncio.run(run_generation_agent(state, max_iterations=1))
@@ -146,14 +172,16 @@ def test_agent_max_iterations(client, admin_headers, monkeypatch):
     me = client.get("/api/users/me", headers=admin_headers).json()
     state = _make_state(project["id"], me["id"])
 
-    async def fake_complete(messages, tools, temperature=0.2):
+    async def fake_complete(
+        self, messages, tools, on_reasoning=None, on_content=None, temperature=0.2
+    ):
         return {
-            "content": "继续",
+            "content": "",
             "tool_calls": [],
             "usage": {"prompt_tokens": 1, "completion_tokens": 1},
         }
 
-    monkeypatch.setattr(LLMClient, "complete_with_tools", fake_complete)
+    monkeypatch.setattr(LLMClient, "stream_complete_with_tools", fake_complete)
     with pytest.raises(Exception) as exc:
         asyncio.run(run_generation_agent(state, max_iterations=2))
     assert "2 轮" in str(exc.value)

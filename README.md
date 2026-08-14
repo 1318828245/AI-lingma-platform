@@ -42,7 +42,9 @@ LLM 已接入 DeepSeek V4：`AI_LINGMA_LLM_MODEL=deepseek-v4-flash`、
 （已被 gitignore，不会提交；需要时用 `backend/.env.example` 复制）。
 移除 `.env` 中的配置即回退到内置 mock 执行器（无需 Key）。
 配置后，生成环节由 DeepSeek 通过 ReAct 工具循环自主读写代码
-（list_files / read_file / write_file / edit_file / run_command / finish）。
+（list_files / read_file / write_file / edit_file / run_command / finish），
+思考过程与正文通过 SSE **逐字流式**推送到对话流（reasoning_delta/assistant_delta），
+工具调用以“调用中…”转圈状态呈现。
 
 ## 启动后端（开发环境）
 

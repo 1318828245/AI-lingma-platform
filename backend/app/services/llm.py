@@ -93,6 +93,119 @@ class LLMClient:
             body = resp.json()
         return body["choices"][0]["message"]
 
+    async def stream_complete_with_tools(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        on_reasoning=None,
+        on_content=None,
+        temperature: float = 0.2,
+    ) -> dict:
+        """SSE 流式工具调用补全。
+
+        逐块回调推理内容（reasoning_content）与正文（content），返回聚合后的完整 message
+        （含 tool_calls），供 ReAct 循环执行工具。
+        """
+        if self.mode == "mock":
+            reasoning = "mock：模拟真实模型的思考过程，这里会逐字流式展示。"
+            content = "mock：开始生成页面。"
+            if on_reasoning:
+                for piece in _chunk_text(reasoning):
+                    await on_reasoning(piece)
+            if on_content:
+                for piece in _chunk_text(content):
+                    await on_content(piece)
+            return {
+                "content": content,
+                "reasoning_content": reasoning,
+                "tool_calls": [
+                    {
+                        "id": "call_mock_finish",
+                        "type": "function",
+                        "function": {
+                            "name": "finish",
+                            "arguments": json.dumps(
+                                {"summary": "mock 模式：生成完成"}
+                            ),
+                        },
+                    }
+                ],
+                "usage": {"prompt_tokens": 0, "completion_tokens": 0},
+            }
+
+        payload = {
+            "model": self.settings.llm_model,
+            "messages": messages,
+            "temperature": temperature,
+            "tools": tools,
+            "tool_choice": "auto",
+            "stream": True,
+            "stream_options": {"include_usage": True},
+        }
+        if self.settings.llm_reasoning_effort:
+            payload["reasoning_effort"] = self.settings.llm_reasoning_effort
+        if self.settings.llm_thinking_enabled:
+            payload["thinking"] = {"type": "enabled"}
+
+        url = self.settings.llm_base_url.rstrip("/") + "/chat/completions"
+        headers = {"Authorization": f"Bearer {self.settings.llm_api_key}"}
+        message: dict = {
+            "content": "",
+            "reasoning_content": "",
+            "tool_calls": [],
+            "usage": {},
+        }
+        async with httpx.AsyncClient(timeout=300) as client:
+            async with client.stream(
+                "POST", url, json=payload, headers=headers
+            ) as resp:
+                resp.raise_for_status()
+                async for line in resp.aiter_lines():
+                    if not line.startswith("data:"):
+                        continue
+                    data = line[len("data:"):].strip()
+                    if data == "[DONE]":
+                        break
+                    try:
+                        chunk = json.loads(data)
+                    except json.JSONDecodeError:
+                        continue
+                    if chunk.get("usage"):
+                        message["usage"] = chunk["usage"]
+                    choices = chunk.get("choices") or []
+                    if not choices:
+                        continue
+                    delta = choices[0].get("delta") or {}
+                    reasoning = delta.get("reasoning_content")
+                    if reasoning:
+                        message["reasoning_content"] += reasoning
+                        if on_reasoning:
+                            await on_reasoning(reasoning)
+                    text = delta.get("content")
+                    if text:
+                        message["content"] += text
+                        if on_content:
+                            await on_content(text)
+                    for tool_call in delta.get("tool_calls") or []:
+                        index = tool_call.get("index", 0)
+                        while len(message["tool_calls"]) <= index:
+                            message["tool_calls"].append(
+                                {
+                                    "id": "",
+                                    "type": "function",
+                                    "function": {"name": "", "arguments": ""},
+                                }
+                            )
+                        target = message["tool_calls"][index]
+                        if tool_call.get("id"):
+                            target["id"] = tool_call["id"]
+                        fn = tool_call.get("function") or {}
+                        if fn.get("name"):
+                            target["function"]["name"] += fn["name"]
+                        if fn.get("arguments"):
+                            target["function"]["arguments"] += fn["arguments"]
+        return message
+
     async def parse_requirement(self, requirement: str, tech_stack: str) -> dict:
         if self.mode == "mock":
             lines = [
@@ -155,3 +268,7 @@ class LLMClient:
                 {"role": "user", "content": json.dumps(state, ensure_ascii=False)},
             ]
         )
+
+
+def _chunk_text(text: str, size: int = 6) -> list[str]:
+    return [text[i : i + size] for i in range(0, len(text), size)]
