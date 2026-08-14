@@ -386,15 +386,77 @@ onMounted(async () => {
   const sessions = await listSessions(projectId);
   if (sessions.length) {
     const history = (await listMessages(sessions[0].id)) as Message[];
-    history.forEach((m) => {
-      if (m.role === "user") {
-        push({ kind: "user", content: m.content });
-      } else if (m.role === "assistant") {
-        push({ kind: "assistant", content: m.content });
-      }
-    });
+    entries.value = historyToEntries(history);
   }
 });
+
+function historyToEntries(history: Message[]): ChatEntry[] {
+  const list: ChatEntry[] = [];
+  for (const m of history) {
+    if (m.role === "user") {
+      list.push({ id: ++seq, kind: "user", content: m.content, collapsed: false });
+      continue;
+    }
+    if (m.msg_type === "summary") {
+      list.push({ id: ++seq, kind: "assistant", content: m.content, collapsed: false });
+      continue;
+    }
+    if (m.msg_type === "stage") {
+      const info = stageInfo(m.content);
+      list.push({
+        id: ++seq,
+        kind: "stage",
+        stageTitle: info.title,
+        stageHint: info.hint,
+        collapsed: false,
+      });
+      continue;
+    }
+    if (m.msg_type === "think") {
+      list.push({ id: ++seq, kind: "think", content: m.content, collapsed: false });
+      continue;
+    }
+    if (m.msg_type === "tool_call") {
+      const tj = (m.tool_call_json || {}) as {
+        tool?: string;
+        ok?: boolean;
+        detail?: string;
+      };
+      list.push({
+        id: ++seq,
+        kind: "tool",
+        tool: tj.tool || "",
+        detail: m.content || tj.detail || "",
+        pending: false,
+        ok: tj.ok !== false,
+        collapsed: false,
+      });
+      continue;
+    }
+    if (m.msg_type === "file_written") {
+      const last = list[list.length - 1];
+      if (last?.kind === "tool" && last.detail === m.content) continue;
+      list.push({ id: ++seq, kind: "file", detail: m.content, collapsed: false });
+      continue;
+    }
+    if (m.msg_type === "build_log") {
+      const last = list[list.length - 1];
+      if (last?.kind === "build") last.lines?.push(m.content);
+      else list.push({ id: ++seq, kind: "build", lines: [m.content], collapsed: true });
+      continue;
+    }
+    if (m.msg_type === "error") {
+      list.push({ id: ++seq, kind: "error", content: m.content, collapsed: false });
+      continue;
+    }
+    if (m.msg_type === "info") {
+      list.push({ id: ++seq, kind: "info", content: m.content, collapsed: false });
+      continue;
+    }
+    list.push({ id: ++seq, kind: "assistant", content: m.content, collapsed: false });
+  }
+  return list;
+}
 
 onBeforeUnmount(() => {
   if (flushTimer !== null) clearTimeout(flushTimer);

@@ -1,5 +1,5 @@
 # PROJECT_STATE
-更新于：2026-08-15 04:10（每轮结束必须更新）
+更新于：2026-08-15 04:40（每轮结束必须更新）
 
 ## 当前里程碑
 - 里程碑：M1（骨架与核心生成回路）
@@ -84,6 +84,12 @@
       （marked + marked-highlight + highlight.js + DOMPurify 消毒），代码块深色等宽
       且最大高度 340px 内部滚动
 - [x] 思考内容 max-height 240px 内部滚动（overscroll contain），不再无限挤压页面
+- [x] 过程事件持久化：stage/think/tool_call/file_written/build_log 落库为会话消息
+      （services/chat_log.py），退出重进后对话流完整回放；流式增量在完成点持久化，
+      避免碎片化；消息排序按 created_at+id
+- [x] 前端历史加载按 msg_type 还原为同一套对话条目（阶段/思考/工具/文件/构建日志分组）
+- [x] 真实生成验证：重新拉取消息含 text/stage/think/tool_call/file_written/
+      build_log/summary 全部类型；pytest 38 passed + 前端 build 通过
 
 ## 进行中 / 下一步
 - [ ] 下一步：M2 预览点选修改（ElementPicker、修改工作流、版本快照/回滚、diff 面板）
@@ -114,6 +120,8 @@
   tool_call_completed（原有事件保留兼容）
 - 前端渲染：marked/highlight.js/dompurify 本地打包；流式期间显示纯文本+光标，
   结束后切 Markdown 渲染，避免逐字重排
+- 会话回放：生成过程事件落库（msg_type=stage/think/tool_call/file_written/build_log），
+  与实时 SSE 同源映射，前端历史与实时渲染共用一套条目模型
 - 管理员设置（注册开关/配额）暂为内存态，重启恢复 env 默认值；M5 做持久化
 - 登录为无状态 JWT，logout 仅前端丢弃令牌；黑名单在 M5 补齐
 - 项目删除先停任务（当前无任务）再清理库记录与工作区目录

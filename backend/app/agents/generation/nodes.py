@@ -12,6 +12,7 @@ from app.core.database import SessionLocal
 from app.models.generation import Generation
 from app.models.guardrail import GuardrailEvent
 from app.models.message import Message
+from app.services.chat_log import save_generation_event
 from app.services.events import get_broker
 from app.services.llm import LLMClient
 from app.services.sandbox import validate_build as run_validate_build
@@ -24,6 +25,11 @@ INPUT_BLOCK_PATTERNS = [
     "rm -rf",
     "drop table",
 ]
+
+async def publish_event(state: GenerationState, event: dict) -> None:
+    """推送 SSE 并持久化为会话消息（重新进入页面时回放）。"""
+    await get_broker().publish(state["generation_id"], event)
+    save_generation_event(state["session_id"], event)
 
 OUTPUT_BLOCK_PATTERNS = [
     "rm -rf",
@@ -103,13 +109,9 @@ async def parse_requirements(state: GenerationState) -> dict:
     _check_cancel(state)
     llm = LLMClient()
     parsed = await llm.parse_requirement(state["requirement"], state["tech_stack"])
-    await get_broker().publish(
-        state["generation_id"],
-        {"type": "stage", "stage": "parse"},
-    )
-    await get_broker().publish(
-        state["generation_id"],
-        {"type": "thought", "content": f"需求解析完成：{parsed['goal']}"},
+    await publish_event(state, {"type": "stage", "stage": "parse"})
+    await publish_event(
+        state, {"type": "thought", "content": f"需求解析完成：{parsed['goal']}"}
     )
     return {"parsed_requirement": parsed, "status": "parsed"}
 
@@ -123,13 +125,9 @@ async def create_plan(state: GenerationState) -> dict:
         if gen is not None:
             gen.plan_json = plan
             db.commit()
-    await get_broker().publish(
-        state["generation_id"],
-        {"type": "stage", "stage": "plan"},
-    )
-    await get_broker().publish(
-        state["generation_id"],
-        {"type": "thought", "content": f"实施计划完成，共 {len(plan)} 步"},
+    await publish_event(state, {"type": "stage", "stage": "plan"})
+    await publish_event(
+        state, {"type": "thought", "content": f"实施计划完成，共 {len(plan)} 步"}
     )
     return {"plan": plan, "status": "planned"}
 
@@ -293,14 +291,10 @@ async def _write_with_guardrail(
     _output_guardrail_check(state, rel_path, content)
     with SessionLocal() as db:
         write_file(db, state["project_id"], workspace, rel_path, content)
-    await broker.publish(
-        state["generation_id"],
-        {"type": "tool_call", "tool": "write_file", "args": {"path": rel_path}},
+    await publish_event(
+        state, {"type": "tool_call", "tool": "write_file", "args": {"path": rel_path}}
     )
-    await broker.publish(
-        state["generation_id"],
-        {"type": "file_written", "path": rel_path},
-    )
+    await publish_event(state, {"type": "file_written", "path": rel_path})
     written.append(rel_path)
 
 
@@ -316,14 +310,10 @@ async def _edit_with_guardrail(
     _output_guardrail_check(state, rel_path, new)
     with SessionLocal() as db:
         edit_file(db, state["project_id"], workspace, rel_path, old, new)
-    await broker.publish(
-        state["generation_id"],
-        {"type": "tool_call", "tool": "edit_file", "args": {"path": rel_path}},
+    await publish_event(
+        state, {"type": "tool_call", "tool": "edit_file", "args": {"path": rel_path}}
     )
-    await broker.publish(
-        state["generation_id"],
-        {"type": "file_written", "path": rel_path},
-    )
+    await publish_event(state, {"type": "file_written", "path": rel_path})
     written.append(rel_path)
 
 
@@ -398,8 +388,8 @@ async def _mock_repair(state: GenerationState, workspace: Path, broker) -> list[
             await _edit_with_guardrail(
                 state, workspace, "index.html", content, new_content, broker, written
             )
-    await get_broker().publish(
-        state["generation_id"],
+    await publish_event(
+        state,
         {"type": "thought", "content": "修复完成：已清理构建失败标记并做局部修正"},
     )
     return written
@@ -410,7 +400,7 @@ async def generate_code(state: GenerationState) -> dict:
     broker = get_broker()
     gen_id = state["generation_id"]
     settings = get_settings()
-    await broker.publish(gen_id, {"type": "stage", "stage": "generate"})
+    await publish_event(state, {"type": "stage", "stage": "generate"})
 
     llm_real = (
         settings.llm_model != "mock"
@@ -438,9 +428,8 @@ async def generate_code(state: GenerationState) -> dict:
         written = await _mock_repair(state, workspace, broker)
         return {"files": list(dict.fromkeys([*state.get("files", []), *written])), "status": "repairing"}
     written = await _mock_generate(state, workspace, broker)
-    await broker.publish(
-        gen_id,
-        {"type": "thought", "content": f"生成完成：写入/修改 {len(written)} 个文件"},
+    await publish_event(
+        state, {"type": "thought", "content": f"生成完成：写入/修改 {len(written)} 个文件"}
     )
     return {"files": list(dict.fromkeys([*state.get("files", []), *written])), "status": "generating"}
 
@@ -473,11 +462,11 @@ async def validate_build(state: GenerationState) -> dict:
             attempt = state.get("build_attempt", 0) + 1
     state["build_attempt"] = attempt
 
-    await broker.publish(gen_id, {"type": "stage", "stage": "build"})
+    await publish_event(state, {"type": "stage", "stage": "build"})
 
     async def emit(line: str) -> None:
         state["build_log"].append(line)
-        await broker.publish(gen_id, {"type": "build_log", "line": line})
+        await publish_event(state, {"type": "build_log", "line": line})
 
     ok, log, errors = await run_validate_build(
         Path(state["workspace"]), state["tech_stack"], emit=emit
@@ -486,9 +475,9 @@ async def validate_build(state: GenerationState) -> dict:
     if ok:
         return {"build_attempt": attempt, "status": "build_ok", "errors": []}
     if attempt < state["max_build_attempts"]:
-        await broker.publish(gen_id, {"type": "stage", "stage": "repair"})
-        await broker.publish(
-            gen_id,
+        await publish_event(state, {"type": "stage", "stage": "repair"})
+        await publish_event(
+            state,
             {
                 "type": "thought",
                 "content": f"构建失败（第 {attempt} 次），进入修复：{errors[0][:120]}",
@@ -525,8 +514,8 @@ async def summarize(state: GenerationState) -> dict:
             )
         )
         db.commit()
-    await get_broker().publish(
-        state["generation_id"],
+    await publish_event(
+        state,
         {
             "type": "completed",
             "generation_id": state["generation_id"],

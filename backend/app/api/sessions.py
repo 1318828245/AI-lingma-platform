@@ -39,6 +39,6 @@ def list_messages(
     return (
         db.query(Message)
         .filter(Message.session_id == session.id)
-        .order_by(Message.created_at.asc())
+        .order_by(Message.created_at.asc(), Message.id.asc())
         .all()
     )

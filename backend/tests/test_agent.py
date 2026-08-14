@@ -10,11 +10,16 @@ from app.services.events import get_broker
 from app.services.llm import LLMClient
 
 
-def _make_state(project_id: int, user_id: int, requirement: str = "做一个页面") -> GenerationState:
+def _make_state(
+    project_id: int,
+    user_id: int,
+    session_id: int,
+    requirement: str = "做一个页面",
+) -> GenerationState:
     return {
         "generation_id": 999999,
         "project_id": project_id,
-        "session_id": 1,
+        "session_id": session_id,
         "user_id": user_id,
         "workspace": str(get_settings().workspace_dir / str(project_id)),
         "requirement": requirement,
@@ -46,7 +51,10 @@ def test_agent_loop_writes_files_and_finishes(
         json={"name": "Agent单测", "template": "blank", "tech_stack": "html"},
     ).json()
     me = client.get("/api/users/me", headers=admin_headers).json()
-    state = _make_state(project["id"], me["id"])
+    sessions = client.get(
+        "/api/sessions", headers=admin_headers, params={"project_id": project["id"]}
+    ).json()
+    state = _make_state(project["id"], me["id"], sessions[0]["id"])
 
     calls = [
         {
@@ -118,6 +126,20 @@ def test_agent_loop_writes_files_and_finishes(
     assert "file_written" in types
     assert any(e.get("type") == "reasoning_delta" and e.get("text") for e in events)
 
+    from app.core.database import SessionLocal
+    from app.models.message import Message
+
+    with SessionLocal() as db:
+        saved = [
+            row.msg_type
+            for row in db.query(Message)
+            .filter(Message.session_id == sessions[0]["id"])
+            .all()
+        ]
+    assert "think" in saved
+    assert "tool_call" in saved
+    assert "file_written" in saved
+
 
 def test_agent_guardrail_blocks_dangerous_write(
     client, admin_headers, monkeypatch
@@ -128,7 +150,10 @@ def test_agent_guardrail_blocks_dangerous_write(
         json={"name": "Agent护轨单测", "template": "blank", "tech_stack": "html"},
     ).json()
     me = client.get("/api/users/me", headers=admin_headers).json()
-    state = _make_state(project["id"], me["id"])
+    sessions = client.get(
+        "/api/sessions", headers=admin_headers, params={"project_id": project["id"]}
+    ).json()
+    state = _make_state(project["id"], me["id"], sessions[0]["id"])
 
     async def fake_complete(
         self, messages, tools, on_reasoning=None, on_content=None, temperature=0.2
@@ -170,7 +195,10 @@ def test_agent_max_iterations(client, admin_headers, monkeypatch):
         json={"name": "Agent轮次单测", "template": "blank", "tech_stack": "html"},
     ).json()
     me = client.get("/api/users/me", headers=admin_headers).json()
-    state = _make_state(project["id"], me["id"])
+    sessions = client.get(
+        "/api/sessions", headers=admin_headers, params={"project_id": project["id"]}
+    ).json()
+    state = _make_state(project["id"], me["id"], sessions[0]["id"])
 
     async def fake_complete(
         self, messages, tools, on_reasoning=None, on_content=None, temperature=0.2

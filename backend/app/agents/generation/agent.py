@@ -19,6 +19,7 @@ from app.agents.generation.state import GenerationState
 from app.agents.tools import edit_file, list_files, read_file, write_file
 from app.core.config import get_settings
 from app.core.database import SessionLocal
+from app.services.chat_log import save_generation_event, save_message
 from app.services.events import get_broker
 from app.services.llm import LLMClient
 from app.services.sandbox import BuildError, run_command
@@ -142,6 +143,13 @@ def _build_user_prompt(state: GenerationState) -> str:
 
 async def _emit(state: GenerationState, event: dict) -> None:
     await get_broker().publish(state["generation_id"], event)
+    # 流式增量与 started 事件由完成点统一持久化，避免碎片化
+    if event.get("type") not in (
+        "reasoning_delta",
+        "assistant_delta",
+        "tool_call_started",
+    ):
+        save_generation_event(state["session_id"], event)
 
 
 async def _execute_tool(state: GenerationState, name: str, args: dict) -> str:
@@ -215,6 +223,9 @@ async def run_generation_agent(
             on_reasoning=on_reasoning,
             on_content=on_content,
         )
+        reasoning = (message.get("reasoning_content") or "").strip()
+        if reasoning:
+            save_message(state["session_id"], "think", reasoning)
         usage = message.get("usage") or {}
         token_usage["prompt_tokens"] += int(usage.get("prompt_tokens") or 0)
         token_usage["completion_tokens"] += int(usage.get("completion_tokens") or 0)
