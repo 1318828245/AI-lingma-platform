@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     # 留空则使用 storage_dir/app.db
     database_url: str = ""
 
-    jwt_secret: str = "dev-only-secret-change-me"
+    jwt_secret: str = "dev-only-secret-change-me-0123456789"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
     refresh_token_expire_days: int = 7
@@ -40,6 +40,19 @@ class Settings(BaseSettings):
         "http://localhost:5173",
         "http://127.0.0.1:5173",
     ]
+
+    # M1-2 任务与生成工作流
+    build_mode: str = "real"  # real | mock（mock 用于无 LLM/无网络环境）
+    generation_concurrency: int = 2
+    modification_concurrency: int = 4
+    task_timeout_seconds: int = 1200
+    max_requirement_length: int = 8000
+    mock_delay_seconds: float = 0.05
+
+    # LLM 适配（OpenAI 兼容协议；留空/ mock 则使用内置 mock 执行器）
+    llm_model: str = "mock"
+    llm_base_url: str = ""
+    llm_api_key: str = ""
 
     @property
     def database_url_default(self) -> str:

@@ -5,7 +5,40 @@
 
 ## 当前进度（M1 骨架阶段）
 
-已实现：后端骨架（FastAPI + SQLAlchemy 2.x）、全部数据模型、JWT 认证（bcrypt）、内置管理员、3 个种子模板、项目/会话/模板/管理员基础 API。
+已实现：后端骨架（FastAPI + SQLAlchemy 2.x）、全部数据模型、JWT 认证（bcrypt）、内置管理员、3 个种子模板、项目/会话/模板/管理员基础 API、**生成工作流（解析→规划→生成→构建→修复）+ SSE 进度流 + 任务取消/超时/恢复**。
+
+## 快速体验生成流程
+
+1. 启动后端（见下）
+2. 登录拿令牌：
+
+```powershell
+$login = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/auth/login `
+  -ContentType 'application/json' -Body '{"username":"admin","password":"admin123"}'
+$headers = @{ Authorization = "Bearer $($login.access_token)" }
+```
+
+3. 新建项目并提交需求：
+
+```powershell
+$project = Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8000/api/projects `
+  -Headers $headers -ContentType 'application/json' `
+  -Body '{"name":"我的名片","template":"个人名片页","tech_stack":"html"}'
+$gen = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:8000/api/projects/$($project.id)/generations" `
+  -Headers $headers -ContentType 'application/json' `
+  -Body '{"requirement":"做一个深色风格的个人名片页"}'
+```
+
+4. 轮询状态或订阅 SSE：
+
+```powershell
+Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/generations/$($gen.id)" -Headers $headers
+# 浏览器打开：http://127.0.0.1:8000/api/generations/<id>/events 看实时进度
+```
+
+默认 `AI_LINGMA_BUILD_MODE=real` 会真实执行 npm 构建；无网络时设 `mock`。
+LLM 默认使用内置 mock 执行器（无需 Key），配置 `AI_LINGMA_LLM_BASE_URL/API_KEY/MODEL`
+后切换 OpenAI 兼容协议。
 
 ## 启动后端（开发环境）
 
@@ -33,4 +66,4 @@ cd backend
 
 - 默认 SQLite + 本地文件存储；生产切换 PostgreSQL 与 Docker 沙箱（见提示词 v3）。
 - 注册默认关闭（`AI_LINGMA_REGISTER_ENABLED=false`），仅管理员登录。
-- 任务执行沙箱、护轨、部署引擎等里程碑尚未实现，暂不用于生产。
+- Docker 沙箱、完整护轨（LLM 复核）、部署引擎等里程碑尚未实现，暂不用于生产。

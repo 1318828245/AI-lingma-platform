@@ -5,6 +5,10 @@ _tmp = tempfile.mkdtemp(prefix="ailingma_test_")
 os.environ["AI_LINGMA_DATABASE_URL"] = f"sqlite:///{os.path.join(_tmp, 'test.db').replace(os.sep, '/')}"
 os.environ["AI_LINGMA_STORAGE_DIR"] = _tmp
 os.environ["AI_LINGMA_JWT_SECRET"] = "test-secret-0123456789abcdef0123456789abcdef"
+os.environ["AI_LINGMA_BUILD_MODE"] = "mock"
+os.environ["AI_LINGMA_GENERATION_CONCURRENCY"] = "2"
+os.environ["AI_LINGMA_TASK_TIMEOUT_SECONDS"] = "30"
+os.environ["AI_LINGMA_MOCK_DELAY_SECONDS"] = "0"
 
 import pytest
 from fastapi.testclient import TestClient

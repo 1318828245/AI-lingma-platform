@@ -6,12 +6,19 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.router import api_router
 from app.core.config import get_settings
 from app.core.database import init_db
+from app.services.generation import recover_interrupted_tasks
+from app.services.task_manager import get_task_manager
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    recovered = recover_interrupted_tasks()
+    if recovered:
+        print(f"[startup] 将 {recovered} 个遗留生成任务标记为 interrupted")
+    await get_task_manager().start()
     yield
+    await get_task_manager().stop()
 
 
 def create_app() -> FastAPI:
