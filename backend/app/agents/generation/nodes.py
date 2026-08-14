@@ -411,6 +411,23 @@ async def generate_code(state: GenerationState) -> dict:
     gen_id = state["generation_id"]
     settings = get_settings()
     await broker.publish(gen_id, {"type": "stage", "stage": "generate"})
+
+    llm_real = (
+        settings.llm_model != "mock"
+        and settings.llm_base_url
+        and settings.llm_api_key
+    )
+    if llm_real and not state.get("repair_mode"):
+        from app.agents.generation.agent import run_generation_agent
+
+        result = await run_generation_agent(state)
+        return {
+            "files": list(dict.fromkeys([*state.get("files", []), *result["files"]])),
+            "summary": result["summary"],
+            "token_usage": result["token_usage"],
+            "status": "generating",
+        }
+
     if "慢速" in state["requirement"]:
         await asyncio.sleep(1.0)
     elif settings.mock_delay_seconds > 0:
@@ -489,7 +506,7 @@ async def validate_build(state: GenerationState) -> dict:
 
 async def summarize(state: GenerationState) -> dict:
     llm = LLMClient()
-    summary = await llm.summarize(state)
+    summary = state.get("summary") or await llm.summarize(state)
     state["summary"] = summary
     with SessionLocal() as db:
         gen = db.get(Generation, state["generation_id"])

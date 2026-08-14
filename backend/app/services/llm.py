@@ -49,6 +49,50 @@ class LLMClient:
             resp.raise_for_status()
             return resp.json()["choices"][0]["message"]["content"]
 
+    async def complete_with_tools(
+        self,
+        messages: list[dict],
+        tools: list[dict],
+        temperature: float = 0.2,
+    ) -> dict:
+        """带工具调用的对话补全，返回 choice.message（含 tool_calls/usage）。"""
+        if self.mode == "mock":
+            return {
+                "content": None,
+                "reasoning_content": "mock：不调用真实模型",
+                "tool_calls": [
+                    {
+                        "id": "call_mock_finish",
+                        "type": "function",
+                        "function": {
+                            "name": "finish",
+                            "arguments": json.dumps(
+                                {"summary": "mock 模式：生成完成"}
+                            ),
+                        },
+                    }
+                ],
+                "usage": {"prompt_tokens": 0, "completion_tokens": 0},
+            }
+        payload = {
+            "model": self.settings.llm_model,
+            "messages": messages,
+            "temperature": temperature,
+            "tools": tools,
+            "tool_choice": "auto",
+        }
+        if self.settings.llm_reasoning_effort:
+            payload["reasoning_effort"] = self.settings.llm_reasoning_effort
+        if self.settings.llm_thinking_enabled:
+            payload["thinking"] = {"type": "enabled"}
+        url = self.settings.llm_base_url.rstrip("/") + "/chat/completions"
+        headers = {"Authorization": f"Bearer {self.settings.llm_api_key}"}
+        async with httpx.AsyncClient(timeout=180) as client:
+            resp = await client.post(url, json=payload, headers=headers)
+            resp.raise_for_status()
+            body = resp.json()
+        return body["choices"][0]["message"]
+
     async def parse_requirement(self, requirement: str, tech_stack: str) -> dict:
         if self.mode == "mock":
             lines = [

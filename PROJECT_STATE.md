@@ -1,5 +1,5 @@
 # PROJECT_STATE
-更新于：2026-08-15 01:00（每轮结束必须更新）
+更新于：2026-08-15 01:40（每轮结束必须更新）
 
 ## 当前里程碑
 - 里程碑：M1（骨架与核心生成回路）
@@ -54,6 +54,12 @@
       base_url=https://api.deepseek.com）；密钥存 backend/.env（gitignored，不提交）
 - [x] LLM 适配层支持 reasoning_effort 与 thinking 模式；连通测试 200 + 真实端到端
       生成 succeeded（解析/规划/总结走 DeepSeek，构建仍为 mock 执行器）
+- [x] LLM 自主写代码（ReAct Agent）：list_files/read_file/write_file/edit_file/
+      run_command/finish 工具循环，输出护轨拦截危险写入，SSE 推送 thought/tool_call/
+      file_written，轮次上限 10、token 用量统计、节点边界取消
+- [x] generate_code 真实模式走 Agent，mock 回退保留；总结优先用 Agent finish(summary)
+- [x] Agent 单元测试 3 例（写盘闭环/护轨拦截/轮次上限）+ 全量 pytest 37 passed
+- [x] 真实 DeepSeek 冒烟：LLM 自主生成完整 index.html（落地页），status=succeeded
 
 ## 进行中 / 下一步
 - [ ] 下一步：M2 预览点选修改（ElementPicker、修改工作流、版本快照/回滚、diff 面板）
@@ -77,13 +83,16 @@
 - 前端构建暂为 vite build（未接入 vue-tsc 类型门禁，M6 打磨）
 - 预览内嵌在生成对话页右侧；全屏预览页仍保留供独立查看
 - 字体全部本地打包（@fontsource），不依赖外部 CDN
+- Agent 轮次上限默认 10（AI_LINGMA_AGENT_MAX_ITERATIONS）；run_command 走白名单+超时
 - 管理员设置（注册开关/配额）暂为内存态，重启恢复 env 默认值；M5 做持久化
 - 登录为无状态 JWT，logout 仅前端丢弃令牌；黑名单在 M5 补齐
 - 项目删除先停任务（当前无任务）再清理库记录与工作区目录
 
 ## 最近构建/测试结果
 - 最后命令：python -m pytest -q → 34 passed；npm run build → 通过（conda + node 18）
+- 最后命令：python -m pytest -q → 37 passed（新增 Agent 3 例）
 - 真实 LLM 连通：POST /chat/completions → 200；端到端生成 succeeded（model=deepseek-v4-flash）
+- 真实 Agent 冒烟：python smoke_agent.py → succeeded，LLM 自主写 index.html
 - 前后端 E2E 冒烟：Vite 代理登录→创建项目→生成 succeeded→预览 HTTP 200
 - UI 冒烟：新工作台布局页面可正常服务，登录/项目列表 API 正常
 - alembic upgrade head → 通过（e0806b14bcc1 + 1c4243ee8fbd；dev 库已迁移）

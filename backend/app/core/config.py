@@ -56,6 +56,9 @@ class Settings(BaseSettings):
     llm_reasoning_effort: str = "high"
     llm_thinking_enabled: bool = True
 
+    # 生成 Agent（ReAct 工具循环）
+    agent_max_iterations: int = 10
+
     @property
     def database_url_default(self) -> str:
         return f"sqlite:///{(self.storage_dir / 'app.db').as_posix()}"
