@@ -49,6 +49,19 @@ def test_preview_requires_valid_token(client, admin_headers, user_headers):
     assert resp.status_code in (401, 422)
 
 
+def test_preview_accepts_cookie_for_static_assets(client, admin_headers):
+    project = _create_project(
+        client, admin_headers, "Cookie预览", template="个人名片页", tech_stack="html"
+    )
+    token = admin_headers["Authorization"].split(" ")[1]
+    # iframe 静态资源不会带 query token，依赖 path=/preview 的 Cookie
+    resp = client.get(
+        f"/preview/{project['id']}/style.css", cookies={"preview_token": token}
+    )
+    assert resp.status_code == 200
+    assert "body" in resp.text
+
+
 def test_preview_path_traversal_blocked(client, admin_headers):
     project = _create_project(
         client, admin_headers, "预览穿越", template="个人名片页", tech_stack="html"

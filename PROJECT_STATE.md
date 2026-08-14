@@ -1,5 +1,5 @@
 # PROJECT_STATE
-更新于：2026-08-15 01:40（每轮结束必须更新）
+更新于：2026-08-15 02:10（每轮结束必须更新）
 
 ## 当前里程碑
 - 里程碑：M1（骨架与核心生成回路）
@@ -60,6 +60,9 @@
 - [x] generate_code 真实模式走 Agent，mock 回退保留；总结优先用 Agent finish(summary)
 - [x] Agent 单元测试 3 例（写盘闭环/护轨拦截/轮次上限）+ 全量 pytest 37 passed
 - [x] 真实 DeepSeek 冒烟：LLM 自主生成完整 index.html（落地页），status=succeeded
+- [x] 修复预览静态资源 422：iframe 内相对资源（style.css/script.js）不带 query token；
+      改为同源 Cookie（preview_token，path=/preview）鉴权，query token 保留兼容；
+      pytest 38 passed + 运行时冒烟 root/css/js 均 200、无 Cookie 401
 
 ## 进行中 / 下一步
 - [ ] 下一步：M2 预览点选修改（ElementPicker、修改工作流、版本快照/回滚、diff 面板）
@@ -84,6 +87,8 @@
 - 预览内嵌在生成对话页右侧；全屏预览页仍保留供独立查看
 - 字体全部本地打包（@fontsource），不依赖外部 CDN
 - Agent 轮次上限默认 10（AI_LINGMA_AGENT_MAX_ITERATIONS）；run_command 走白名单+超时
+- 预览鉴权：preview_token Cookie（path=/preview，前端 JS 写入，非 HttpOnly）；
+  仅限本地/内网开发，M4/M6 部署隔离时升级为 HttpOnly + 严格 CSP
 - 管理员设置（注册开关/配额）暂为内存态，重启恢复 env 默认值；M5 做持久化
 - 登录为无状态 JWT，logout 仅前端丢弃令牌；黑名单在 M5 补齐
 - 项目删除先停任务（当前无任务）再清理库记录与工作区目录
@@ -91,6 +96,7 @@
 ## 最近构建/测试结果
 - 最后命令：python -m pytest -q → 34 passed；npm run build → 通过（conda + node 18）
 - 最后命令：python -m pytest -q → 37 passed（新增 Agent 3 例）
+- 最后命令：python -m pytest -q → 38 passed（新增 Cookie 预览 1 例）
 - 真实 LLM 连通：POST /chat/completions → 200；端到端生成 succeeded（model=deepseek-v4-flash）
 - 真实 Agent 冒烟：python smoke_agent.py → succeeded，LLM 自主写 index.html
 - 前后端 E2E 冒烟：Vite 代理登录→创建项目→生成 succeeded→预览 HTTP 200

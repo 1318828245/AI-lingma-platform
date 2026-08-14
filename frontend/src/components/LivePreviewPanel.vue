@@ -93,7 +93,7 @@ const frameWidth = computed(() => {
 });
 const frameSrc = computed(
   () =>
-    `/preview/${props.projectId}/?token=${encodeURIComponent(auth.accessToken)}&t=${frameKey.value}`
+    `/preview/${props.projectId}/?t=${frameKey.value}`
 );
 const previewUrl = computed(
   () => `/preview/${props.projectId}/ · ${previewStatus.value?.mode ?? "…"}`
@@ -125,11 +125,24 @@ async function checkStatus() {
   }
 }
 
+function ensurePreviewCookie() {
+  if (!auth.accessToken) return;
+  document.cookie =
+    `preview_token=${encodeURIComponent(auth.accessToken)}; path=/preview; max-age=86400; samesite=lax`;
+}
+
 function reload() {
   frameKey.value += 1;
 }
 
-onMounted(checkStatus);
+onMounted(() => {
+  ensurePreviewCookie();
+  checkStatus();
+});
+watch(
+  () => auth.accessToken,
+  () => ensurePreviewCookie()
+);
 watch(
   () => props.refreshToken,
   () => checkStatus()

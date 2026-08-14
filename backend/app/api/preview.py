@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
@@ -52,10 +52,14 @@ def preview_status(
 def preview_file(
     project_id: int,
     path: str,
-    token: str = Query(..., description="访问令牌（iframe 无法带 header，使用 query）"),
+    token: str | None = Query(default=None, description="访问令牌（兼容旧链接）"),
+    preview_token: str | None = Cookie(default=None, description="iframe 静态资源鉴权 Cookie"),
     db: Session = Depends(get_db),
 ):
-    user = get_user_from_token(db, token)
+    auth_token = token or preview_token
+    if not auth_token:
+        raise HTTPException(status_code=401, detail="缺少预览令牌")
+    user = get_user_from_token(db, auth_token)
     project = get_owned_project(db, project_id, user.id)
     root, _ = _preview_root(project_id)
     if not root.exists():
