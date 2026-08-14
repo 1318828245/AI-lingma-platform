@@ -40,25 +40,107 @@
         </section>
 
         <section class="panel chat-card">
-          <div class="chat-list">
-            <div
-              v-for="(msg, idx) in messages"
-              :key="idx"
-              class="chat-msg"
-              :class="msg.role"
-            >
-              <div class="bubble">
-                <span class="who mono">{{ msg.role === "user" ? "你" : "灵码" }}</span>
-                <p>{{ msg.content }}</p>
-              </div>
-            </div>
-            <div v-if="!messages.length" class="empty-tip">
+          <div ref="chatListRef" class="chat-list">
+            <div v-if="!entries.length" class="empty-tip">
               <p class="empty-mark" aria-hidden="true">✦</p>
               <p class="empty-title">从这里开始</p>
               <p>描述你想做的页面，比如：</p>
               <p class="mono example">“做一个深色风格的个人名片页，展示技能与作品”</p>
             </div>
+
+            <template v-for="entry in entries" :key="entry.id">
+              <!-- 用户消息 -->
+              <div v-if="entry.kind === 'user'" class="chat-msg user">
+                <div class="bubble">
+                  <span class="who mono">你</span>
+                  <p>{{ entry.content }}</p>
+                </div>
+              </div>
+
+              <!-- AI 消息 -->
+              <div v-else-if="entry.kind === 'assistant'" class="chat-msg">
+                <div class="bubble">
+                  <span class="who mono">灵码</span>
+                  <p>{{ entry.content }}</p>
+                </div>
+              </div>
+
+              <!-- 阶段 -->
+              <div v-else-if="entry.kind === 'stage'" class="entry stage-entry">
+                <span class="stage-dot" />
+                <span class="entry-title">
+                  进入<b>「{{ entry.stageTitle }}」</b>阶段
+                </span>
+                <span class="entry-hint">{{ entry.stageHint }}</span>
+              </div>
+
+              <!-- 思考（可折叠） -->
+              <div
+                v-else-if="entry.kind === 'think'"
+                class="entry collapsible"
+                :class="{ open: !entry.collapsed }"
+                role="button"
+                tabindex="0"
+                @click="entry.collapsed = !entry.collapsed"
+                @keydown.enter="entry.collapsed = !entry.collapsed"
+              >
+                <span class="entry-icon think"><ToolIcon name="think" /></span>
+                <span class="entry-title">思考</span>
+                <span class="chevron" aria-hidden="true">
+                  {{ entry.collapsed ? "▸" : "▾" }}
+                </span>
+                <p v-if="!entry.collapsed" class="entry-body">{{ entry.content }}</p>
+              </div>
+
+              <!-- 工具调用 -->
+              <div v-else-if="entry.kind === 'tool'" class="entry tool-entry">
+                <span class="entry-icon"><ToolIcon :name="toolIcon(entry.tool)" /></span>
+                <span class="mono tool-name">{{ toolLabel(entry.tool) }}</span>
+                <span v-if="entry.detail" class="entry-detail mono">{{ entry.detail }}</span>
+              </div>
+
+              <!-- 写入文件 -->
+              <div v-else-if="entry.kind === 'file'" class="entry file-entry">
+                <span class="entry-icon ok"><ToolIcon name="check" /></span>
+                <span class="entry-detail mono">{{ entry.detail }}</span>
+              </div>
+
+              <!-- 构建日志（可折叠） -->
+              <div
+                v-else-if="entry.kind === 'build'"
+                class="entry collapsible build-entry"
+                :class="{ open: !entry.collapsed }"
+                role="button"
+                tabindex="0"
+                @click="entry.collapsed = !entry.collapsed"
+                @keydown.enter="entry.collapsed = !entry.collapsed"
+              >
+                <span class="entry-icon"><ToolIcon name="terminal" /></span>
+                <span class="entry-title">构建日志</span>
+                <span class="entry-hint">（{{ entry.lines?.length }} 行）</span>
+                <span class="chevron" aria-hidden="true">
+                  {{ entry.collapsed ? "▸" : "▾" }}
+                </span>
+                <div v-if="!entry.collapsed" class="build-lines">
+                  <p v-for="(line, idx) in entry.lines" :key="idx">{{ line }}</p>
+                </div>
+              </div>
+
+              <!-- 错误 -->
+              <div v-else-if="entry.kind === 'error'" class="entry error-entry">
+                <span class="entry-icon bad"><ToolIcon name="alert" /></span>
+                <span class="entry-title">出错了</span>
+                <p class="entry-body">{{ entry.content }}</p>
+              </div>
+
+              <!-- 提示 -->
+              <div v-else-if="entry.kind === 'info'" class="entry info-entry">
+                <span class="entry-icon"><ToolIcon name="info" /></span>
+                <span class="entry-title">{{ entry.content }}</span>
+              </div>
+            </template>
           </div>
+
           <div class="input-row">
             <el-input
               v-model="requirement"
@@ -89,19 +171,6 @@
             </div>
           </div>
         </section>
-
-        <section class="panel log-card">
-          <div class="log-head">
-            <span class="panel-title">实时日志</span>
-            <span class="mono log-count">{{ logs.length }} 条</span>
-          </div>
-          <div class="log-body">
-            <p v-for="(line, idx) in logs" :key="idx" class="log-line">
-              {{ line }}
-            </p>
-            <p v-if="!logs.length" class="log-empty">还没开始，提交需求后这里会滚动起来</p>
-          </div>
-        </section>
       </aside>
 
       <main class="preview-pane">
@@ -118,22 +187,20 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import LivePreviewPanel from "../components/LivePreviewPanel.vue";
 import StageRail from "../components/StageRail.vue";
+import ToolIcon from "../components/ToolIcon.vue";
+import { stageInfo } from "../constants/stages";
 import {
   cancelGeneration,
   createGeneration,
   generationEventUrl,
   getGeneration,
 } from "../api/generations";
-import {
-  getProject,
-  listMessages,
-  listSessions,
-} from "../api/projects";
+import { getProject, listMessages, listSessions } from "../api/projects";
 import type {
   Generation,
   Message,
@@ -141,19 +208,54 @@ import type {
   SseEvent,
 } from "../types";
 
+interface ChatEntry {
+  id: number;
+  kind:
+    | "user"
+    | "assistant"
+    | "stage"
+    | "think"
+    | "tool"
+    | "file"
+    | "build"
+    | "error"
+    | "info";
+  content?: string;
+  stageTitle?: string;
+  stageHint?: string;
+  tool?: string;
+  detail?: string;
+  lines?: string[];
+  collapsed?: boolean;
+}
+
 const route = useRoute();
 const router = useRouter();
 const projectId = Number(route.params.id);
 
 const project = ref<Project | null>(null);
 const requirement = ref("");
-const messages = ref<Array<{ role: string; content: string }>>([]);
+const entries = ref<ChatEntry[]>([]);
 const runningGen = ref<Generation | null>(null);
 const progressStage = ref("parse");
-const logs = ref<string[]>([]);
 const submitting = ref(false);
 const previewRefresh = ref(0);
+const chatListRef = ref<HTMLElement | null>(null);
 let eventSource: EventSource | null = null;
+let seq = 0;
+
+function push(partial: Omit<ChatEntry, "id">) {
+  entries.value.push({ id: ++seq, collapsed: true, ...partial });
+}
+
+async function scrollToBottom() {
+  await nextTick();
+  if (chatListRef.value) {
+    chatListRef.value.scrollTop = chatListRef.value.scrollHeight;
+  }
+}
+
+watch(() => entries.value.length, scrollToBottom);
 
 const genStateLabel = computed(() => {
   if (!runningGen.value) return "待命";
@@ -172,12 +274,38 @@ const genStateClass = computed(() => {
   return "";
 });
 
+function toolLabel(tool?: string) {
+  const map: Record<string, string> = {
+    write_file: "写入文件",
+    edit_file: "修改文件",
+    run_command: "运行命令",
+    read_file: "读取文件",
+    list_files: "查看文件",
+    finish: "完成",
+  };
+  return map[tool || ""] || tool || "工具";
+}
+
+function toolIcon(tool?: string) {
+  if (tool === "write_file" || tool === "edit_file") return "pencil";
+  if (tool === "run_command") return "terminal";
+  if (tool === "read_file" || tool === "list_files") return "folder";
+  if (tool === "finish") return "flag";
+  return "info";
+}
+
 onMounted(async () => {
   project.value = await getProject(projectId);
   const sessions = await listSessions(projectId);
   if (sessions.length) {
     const history = (await listMessages(sessions[0].id)) as Message[];
-    messages.value = history.map((m) => ({ role: m.role, content: m.content }));
+    history.forEach((m) => {
+      if (m.role === "user") {
+        push({ kind: "user", content: m.content });
+      } else if (m.role === "assistant") {
+        push({ kind: "assistant", content: m.content });
+      }
+    });
   }
 });
 
@@ -193,12 +321,11 @@ async function submitRequirement() {
   }
   submitting.value = true;
   try {
-    messages.value.push({ role: "user", content: text });
+    push({ kind: "user", content: text });
     const gen = await createGeneration(projectId, text);
     requirement.value = "";
     runningGen.value = gen;
     progressStage.value = "parse";
-    logs.value = [];
     previewRefresh.value += 1;
     watchGeneration(gen.id);
   } catch (error: any) {
@@ -214,42 +341,80 @@ function watchGeneration(genId: number) {
 
   eventSource.addEventListener("stage", (e) => {
     const event = JSON.parse((e as MessageEvent).data) as SseEvent;
-    progressStage.value = event.stage as string;
-    logs.value.push(`[stage] ${event.stage}`);
+    const stage = String(event.stage);
+    progressStage.value = stage;
+    const info = stageInfo(stage);
+    push({
+      kind: "stage",
+      stageTitle: info.title,
+      stageHint: info.hint,
+    });
+    if (stage === "build") {
+      push({ kind: "build", lines: [] });
+    }
   });
+
   eventSource.addEventListener("thought", (e) => {
     const event = JSON.parse((e as MessageEvent).data) as SseEvent;
-    logs.value.push(`[think] ${event.content}`);
+    const content = String(event.content || "").trim();
+    if (content) {
+      push({ kind: "think", content });
+    }
   });
-  eventSource.addEventListener("build_log", (e) => {
+
+  eventSource.addEventListener("tool_call", (e) => {
     const event = JSON.parse((e as MessageEvent).data) as SseEvent;
-    logs.value.push(String(event.line));
+    const tool = String(event.tool || "");
+    const args = (event.args || {}) as Record<string, unknown>;
+    let detail = "";
+    if (typeof args.path === "string") detail = args.path;
+    else if (Array.isArray(args.command)) detail = args.command.join(" ");
+    push({ kind: "tool", tool, detail });
   });
+
   eventSource.addEventListener("file_written", (e) => {
     const event = JSON.parse((e as MessageEvent).data) as SseEvent;
-    logs.value.push(`[write] ${event.path}`);
+    const path = String(event.path || "");
+    const last = entries.value[entries.value.length - 1];
+    // 写入工具的 tool_call 已带同一 path，避免重复展示
+    if (last?.kind === "tool" && last.detail === path) return;
+    push({ kind: "file", detail: path });
   });
+
+  eventSource.addEventListener("build_log", (e) => {
+    const event = JSON.parse((e as MessageEvent).data) as SseEvent;
+    let group = entries.value[entries.value.length - 1];
+    if (group?.kind !== "build") {
+      push({ kind: "build", lines: [] });
+      group = entries.value[entries.value.length - 1];
+    }
+    group.lines?.push(String(event.line || ""));
+  });
+
   eventSource.addEventListener("completed", (e) => {
     const event = JSON.parse((e as MessageEvent).data) as SseEvent;
-    messages.value.push({ role: "assistant", content: String(event.summary) });
+    push({ kind: "assistant", content: String(event.summary || "") });
     progressStage.value = "done";
     eventSource?.close();
     previewRefresh.value += 1;
     refreshStatus(event.generation_id as number);
   });
+
   eventSource.addEventListener("error", (e) => {
     const event = JSON.parse((e as MessageEvent).data) as SseEvent;
-    ElMessage.error(String(event.error || "任务失败了"));
+    push({ kind: "error", content: String(event.error || "任务失败了") });
     progressStage.value = "done";
     eventSource?.close();
     refreshStatus();
   });
+
   eventSource.addEventListener("cancelled", () => {
-    ElMessage.warning("已取消这次生成");
+    push({ kind: "info", content: "已取消这次生成" });
     progressStage.value = "done";
     eventSource?.close();
     refreshStatus();
   });
+
   eventSource.onerror = () => {
     eventSource?.close();
     refreshStatus();
@@ -384,15 +549,13 @@ async function cancel() {
   padding: 14px 16px;
   flex-shrink: 0;
 }
-.stage-head,
-.log-head {
+.stage-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 12px;
 }
-.stage-meta,
-.log-count {
+.stage-meta {
   font-size: 11px;
   color: var(--faint);
 }
@@ -410,10 +573,12 @@ async function cancel() {
   flex: 1;
   overflow-y: auto;
   padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 .chat-msg {
   display: flex;
-  margin-bottom: 14px;
 }
 .chat-msg.user {
   justify-content: flex-end;
@@ -446,7 +611,7 @@ async function cancel() {
   white-space: pre-wrap;
 }
 .empty-tip {
-  margin-top: 44px;
+  margin: 32px auto;
   text-align: center;
   color: var(--muted);
   font-size: 14px;
@@ -474,6 +639,125 @@ async function cancel() {
   font-size: 12px;
   color: #9a6b16;
 }
+
+/* 对话内事件流 */
+.entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 7px 10px;
+  border-radius: var(--radius-md);
+  background: var(--canvas);
+  border: 1px solid var(--line);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+.entry-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: var(--primary-soft);
+  color: var(--primary);
+  flex-shrink: 0;
+}
+.entry-icon.think {
+  background: var(--amber-soft);
+  color: #b97f1c;
+}
+.entry-icon.ok {
+  background: var(--green-soft);
+  color: var(--green);
+}
+.entry-icon.bad {
+  background: var(--red-soft);
+  color: var(--red);
+}
+.entry-title {
+  font-weight: 600;
+}
+.entry-hint {
+  color: var(--muted);
+  font-size: 12px;
+}
+.entry-detail {
+  font-size: 12px;
+  color: var(--muted);
+  word-break: break-all;
+  min-width: 0;
+}
+.tool-name {
+  font-size: 12px;
+  color: var(--primary-dark);
+}
+.stage-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--amber);
+  box-shadow: 0 0 0 3px var(--amber-soft);
+  flex-shrink: 0;
+}
+.stage-entry .entry-title b {
+  color: var(--ink);
+}
+.collapsible {
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.collapsible:hover {
+  border-color: var(--line-strong);
+  background: var(--paper);
+}
+.chevron {
+  margin-left: auto;
+  color: var(--faint);
+  font-size: 12px;
+}
+.entry-body {
+  flex-basis: 100%;
+  margin-top: 2px;
+  padding: 8px 10px;
+  background: var(--paper);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--ink);
+}
+.build-lines {
+  flex-basis: 100%;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--warm-dark);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  margin-top: 2px;
+}
+.build-lines p {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: #e8e2d8;
+  line-height: 1.7;
+  word-break: break-all;
+}
+.error-entry {
+  background: var(--red-soft);
+  border-color: rgba(224, 91, 91, 0.35);
+}
+.error-entry .entry-body {
+  border-color: rgba(224, 91, 91, 0.25);
+  color: #a13a3a;
+}
+.info-entry {
+  background: var(--primary-soft);
+  border-color: rgba(91, 103, 241, 0.25);
+}
 .input-row {
   display: flex;
   gap: 10px;
@@ -492,30 +776,29 @@ async function cancel() {
   color: var(--faint);
   text-align: center;
 }
-.log-card {
-  flex-shrink: 0;
-}
-.log-body {
-  height: 150px;
-  overflow-y: auto;
-  background: var(--warm-dark);
-  border-radius: var(--radius-md);
-  padding: 10px 12px;
-}
-.log-line {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: #e8e2d8;
-  line-height: 1.7;
-  word-break: break-all;
-}
-.log-empty {
-  font-size: 12px;
-  color: #8b8376;
-}
 .preview-pane {
   min-width: 0;
   min-height: 0;
   padding: 16px 16px 16px 0;
+}
+
+/* 响应式：窄屏上下堆叠 */
+@media (max-width: 1024px) {
+  .workspace {
+    height: auto;
+    min-height: 100vh;
+  }
+  .split {
+    grid-template-columns: 1fr;
+  }
+  .chat-pane {
+    border-right: none;
+    overflow: visible;
+  }
+  .preview-pane {
+    padding: 0 12px 16px;
+    height: 56vh;
+    min-height: 420px;
+  }
 }
 </style>
