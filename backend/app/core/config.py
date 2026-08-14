@@ -53,6 +53,8 @@ class Settings(BaseSettings):
     llm_model: str = "mock"
     llm_base_url: str = ""
     llm_api_key: str = ""
+    llm_reasoning_effort: str = "high"
+    llm_thinking_enabled: bool = True
 
     @property
     def database_url_default(self) -> str:

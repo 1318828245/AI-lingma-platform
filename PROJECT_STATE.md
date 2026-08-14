@@ -1,5 +1,5 @@
 # PROJECT_STATE
-更新于：2026-08-15 00:40（每轮结束必须更新）
+更新于：2026-08-15 01:00（每轮结束必须更新）
 
 ## 当前里程碑
 - 里程碑：M1（骨架与核心生成回路）
@@ -50,6 +50,10 @@
 - [x] 交互友好化：全局键盘聚焦环、按钮悬停/按下/禁用态、Enter 发送（Shift+Enter 换行）、
       阶段提示 tooltip、更友善的空状态/错误文案、登录页暖色渐变与引导文案
 - [x] 构建与冒烟通过
+- [x] 接入真实 LLM：DeepSeek V4（deepseek-v4-flash，reasoning_effort=high，
+      base_url=https://api.deepseek.com）；密钥存 backend/.env（gitignored，不提交）
+- [x] LLM 适配层支持 reasoning_effort 与 thinking 模式；连通测试 200 + 真实端到端
+      生成 succeeded（解析/规划/总结走 DeepSeek，构建仍为 mock 执行器）
 
 ## 进行中 / 下一步
 - [ ] 下一步：M2 预览点选修改（ElementPicker、修改工作流、版本快照/回滚、diff 面板）
@@ -65,6 +69,7 @@
 - LangGraph：conda 环境预装 langgraph 1.2.x，生成工作流已用 StateGraph 实现；
   PyPI 索引对 langgraph-core 包仍 404，但不影响（langgraph 包已满足需求）
 - LLM：默认 mock；配置 AI_LINGMA_LLM_BASE_URL/API_KEY/MODEL 后走 OpenAI 兼容协议
+- LLM 实际配置：deepseek-v4-flash（high effort，thinking enabled），见 backend/.env
 - 构建：AI_LINGMA_BUILD_MODE=mock（离线）/ real（真实 npm 构建）
 - 预览：基础版直接服务 dist（优先）或工作区静态文件；按项目的 Vite dev-server
   热更新推迟到 M2/M6；iframe 使用 sandbox + 服务端代理
@@ -78,6 +83,7 @@
 
 ## 最近构建/测试结果
 - 最后命令：python -m pytest -q → 34 passed；npm run build → 通过（conda + node 18）
+- 真实 LLM 连通：POST /chat/completions → 200；端到端生成 succeeded（model=deepseek-v4-flash）
 - 前后端 E2E 冒烟：Vite 代理登录→创建项目→生成 succeeded→预览 HTTP 200
 - UI 冒烟：新工作台布局页面可正常服务，登录/项目列表 API 正常
 - alembic upgrade head → 通过（e0806b14bcc1 + 1c4243ee8fbd；dev 库已迁移）

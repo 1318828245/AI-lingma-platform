@@ -37,8 +37,10 @@ Invoke-RestMethod -Uri "http://127.0.0.1:8000/api/generations/$($gen.id)" -Heade
 ```
 
 默认 `AI_LINGMA_BUILD_MODE=real` 会真实执行 npm 构建；无网络时设 `mock`。
-LLM 默认使用内置 mock 执行器（无需 Key），配置 `AI_LINGMA_LLM_BASE_URL/API_KEY/MODEL`
-后切换 OpenAI 兼容协议。
+LLM 已接入 DeepSeek V4：`AI_LINGMA_LLM_MODEL=deepseek-v4-flash`、
+`AI_LINGMA_LLM_REASONING_EFFORT=high`，密钥等配置在 `backend/.env`
+（已被 gitignore，不会提交；需要时用 `backend/.env.example` 复制）。
+移除 `.env` 中的配置即回退到内置 mock 执行器（无需 Key）。
 
 ## 启动后端（开发环境）
 

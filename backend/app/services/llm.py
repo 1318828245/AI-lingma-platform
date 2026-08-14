@@ -36,6 +36,10 @@ class LLMClient:
             "messages": messages,
             "temperature": temperature,
         }
+        if self.settings.llm_reasoning_effort:
+            payload["reasoning_effort"] = self.settings.llm_reasoning_effort
+        if self.settings.llm_thinking_enabled:
+            payload["thinking"] = {"type": "enabled"}
         if json_mode:
             payload["response_format"] = {"type": "json_object"}
         url = self.settings.llm_base_url.rstrip("/") + "/chat/completions"

@@ -9,6 +9,9 @@ os.environ["AI_LINGMA_BUILD_MODE"] = "mock"
 os.environ["AI_LINGMA_GENERATION_CONCURRENCY"] = "2"
 os.environ["AI_LINGMA_TASK_TIMEOUT_SECONDS"] = "30"
 os.environ["AI_LINGMA_MOCK_DELAY_SECONDS"] = "0"
+os.environ["AI_LINGMA_LLM_MODEL"] = "mock"
+os.environ["AI_LINGMA_LLM_BASE_URL"] = ""
+os.environ["AI_LINGMA_LLM_API_KEY"] = ""
 
 import pytest
 from fastapi.testclient import TestClient
