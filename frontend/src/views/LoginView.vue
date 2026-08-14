@@ -1,61 +1,49 @@
 <template>
   <div class="login-wrap">
-    <el-card class="login-card">
-      <h1 class="login-title">AI 灵码平台</h1>
-      <p class="muted">自然语言生成可运行前端工程</p>
-      <el-form
-        ref="formRef"
-        :model="form"
-        :rules="rules"
-        label-position="top"
-        @submit.prevent="submit"
-      >
-        <el-form-item label="用户名" prop="username">
-          <el-input v-model="form.username" placeholder="admin" />
-        </el-form-item>
-        <el-form-item label="密码" prop="password">
-          <el-input
-            v-model="form.password"
-            type="password"
-            show-password
-            placeholder="请输入密码"
-            @keyup.enter="submit"
-          />
-        </el-form-item>
-        <el-button
-          type="primary"
-          class="login-btn"
-          :loading="loading"
-          @click="submit"
-        >
-          登录
-        </el-button>
-      </el-form>
-    </el-card>
+    <div class="brand">
+      <p class="eyebrow">AI · Lingma Studio</p>
+      <h1 class="wordmark">灵码</h1>
+      <p class="tagline">说需求，看它长出来</p>
+    </div>
+    <form class="panel login-card" @submit.prevent="submit">
+      <label class="field">
+        <span class="mono label">用户名</span>
+        <input v-model="form.username" autocomplete="username" placeholder="admin" />
+      </label>
+      <label class="field">
+        <span class="mono label">密码</span>
+        <input
+          v-model="form.password"
+          type="password"
+          autocomplete="current-password"
+          placeholder="输入密码"
+        />
+      </label>
+      <button class="submit" type="submit" :disabled="loading">
+        {{ loading ? "登录中…" : "进入工作台" }}
+      </button>
+    </form>
   </div>
 </template>
 
 <script setup lang="ts">
 import { reactive, ref } from "vue";
 import { useRouter } from "vue-router";
-import { ElMessage, type FormInstance, type FormRules } from "element-plus";
+import { ElMessage } from "element-plus";
 import { api } from "../api/client";
 import { useAuthStore } from "../stores/auth";
 import type { User } from "../types";
 
 const router = useRouter();
 const auth = useAuthStore();
-const formRef = ref<FormInstance>();
 const loading = ref(false);
-
 const form = reactive({ username: "admin", password: "" });
-const rules: FormRules = {
-  username: [{ required: true, message: "请输入用户名", trigger: "blur" }],
-  password: [{ required: true, message: "请输入密码", trigger: "blur" }],
-};
 
 async function submit() {
-  await formRef.value?.validate();
+  if (!form.username || !form.password) {
+    ElMessage.warning("用户名和密码都要填");
+    return;
+  }
   loading.value = true;
   try {
     const { data } = await api.post("/auth/login", form);
@@ -76,27 +64,96 @@ async function submit() {
 
 <style scoped>
 .login-wrap {
-  min-height: 100vh;
+  height: 100vh;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(245, 158, 11, 0.12), transparent 34%),
+    radial-gradient(circle at 80% 75%, rgba(37, 99, 235, 0.14), transparent 40%),
+    var(--ink-950);
+}
+.brand {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   justify-content: center;
-  background: linear-gradient(135deg, #0f172a, #1e293b);
+  padding: 0 12%;
+  color: #e7ecf5;
+}
+.brand .eyebrow {
+  color: var(--amber);
+  margin-bottom: 14px;
+}
+.brand h1 {
+  font-size: 64px;
+  letter-spacing: 0.04em;
+}
+.tagline {
+  margin-top: 10px;
+  color: #94a3b8;
+  font-size: 15px;
 }
 .login-card {
-  width: 380px;
-  padding: 12px 8px;
+  align-self: center;
+  justify-self: center;
+  width: min(400px, 84%);
+  padding: 34px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  border-top: 3px solid var(--amber);
 }
-.login-title {
-  font-size: 24px;
-  text-align: center;
-  margin-bottom: 4px;
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
 }
-.login-card p {
-  text-align: center;
-  margin-bottom: 20px;
+.label {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
-.login-btn {
-  width: 100%;
-  margin-top: 8px;
+.field input {
+  height: 42px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  padding: 0 14px;
+  font-size: 14px;
+  font-family: var(--font-body);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.field input:focus {
+  border-color: var(--ink-700);
+  box-shadow: 0 0 0 3px rgba(14, 21, 38, 0.08);
+}
+.submit {
+  height: 44px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: var(--ink-900);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.submit:hover {
+  background: var(--ink-800);
+}
+.submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+@media (max-width: 820px) {
+  .login-wrap {
+    grid-template-columns: 1fr;
+  }
+  .brand {
+    padding: 40px 24px 0;
+  }
+  .login-card {
+    grid-row: 2;
+  }
 }
 </style>

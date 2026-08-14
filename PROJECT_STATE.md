@@ -1,5 +1,5 @@
 # PROJECT_STATE
-更新于：2026-08-14 23:20（每轮结束必须更新）
+更新于：2026-08-15 00:10（每轮结束必须更新）
 
 ## 当前里程碑
 - 里程碑：M1（骨架与核心生成回路）
@@ -39,6 +39,12 @@
 - [x] SSE 支持 query token（EventSource 无法自定义 header）
 - [x] npm run build 通过；前后端 E2E 冒烟通过（Vite 代理登录→建项目→生成→预览 200）
 - [x] pytest 34 例全部通过（新增预览/文件树/SSE token 6 例）
+- [x] 安装 frontend-design 技能（anthropics/skills，C:\Users\13188\.codex\skills\frontend-design）
+- [x] 前端 UI 重设计（按 frontend-design 方法论）：墨蓝+琥珀设计令牌、
+      Space Grotesk / Inter / IBM Plex Mono 本地字体（fontsource，离线可用）
+- [x] 生成对话页改为“左对话 + 右实时预览”同屏工作台，不再依赖按钮跳转预览；
+      新增 LivePreviewPanel（设备框预览 + 三档视口 + 构建状态条）与 StageRail 流水线
+- [x] 登录页 / 项目列表 / 全屏预览统一视觉；npm run build + 运行时冒烟通过
 
 ## 进行中 / 下一步
 - [ ] 下一步：M2 预览点选修改（ElementPicker、修改工作流、版本快照/回滚、diff 面板）
@@ -59,6 +65,8 @@
   热更新推迟到 M2/M6；iframe 使用 sandbox + 服务端代理
 - SSE：EventSource 用 query token 鉴权；普通 API 仍用 Authorization header
 - 前端构建暂为 vite build（未接入 vue-tsc 类型门禁，M6 打磨）
+- 预览内嵌在生成对话页右侧；全屏预览页仍保留供独立查看
+- 字体全部本地打包（@fontsource），不依赖外部 CDN
 - 管理员设置（注册开关/配额）暂为内存态，重启恢复 env 默认值；M5 做持久化
 - 登录为无状态 JWT，logout 仅前端丢弃令牌；黑名单在 M5 补齐
 - 项目删除先停任务（当前无任务）再清理库记录与工作区目录
@@ -66,6 +74,7 @@
 ## 最近构建/测试结果
 - 最后命令：python -m pytest -q → 34 passed；npm run build → 通过（conda + node 18）
 - 前后端 E2E 冒烟：Vite 代理登录→创建项目→生成 succeeded→预览 HTTP 200
+- UI 冒烟：新工作台布局页面可正常服务，登录/项目列表 API 正常
 - alembic upgrade head → 通过（e0806b14bcc1 + 1c4243ee8fbd；dev 库已迁移）
 - 真实构建冒烟：任务看板模板生成 → npm install/build → dist/index.html 产出，succeeded
 - uvicorn 冒烟：health ok、admin 登录 200（M1-1）

@@ -61,6 +61,7 @@ npm run dev
 
 浏览器打开 `http://127.0.0.1:5173`，用 `admin / admin123` 登录。
 Vite 已配置 `/api` 与 `/preview` 代理到后端 8000。
+进入项目后是“左对话 + 右实时预览”同屏工作台：提交需求后，右侧预览随生成过程实时更新。
 
 默认管理员：`admin / admin123`（首次登录后请修改；生产环境通过 `.env` 的
 `AI_LINGMA_ADMIN_USERNAME` / `AI_LINGMA_ADMIN_PASSWORD` 指定）。

@@ -1,14 +1,81 @@
+:root {
+  --ink-950: #0b1120;
+  --ink-900: #0e1526;
+  --ink-800: #1a2338;
+  --ink-700: #27334d;
+  --paper: #ffffff;
+  --canvas: #f6f7fb;
+  --line: #e4e8f1;
+  --line-strong: #d4daea;
+  --text: #1f2937;
+  --muted: #6b7280;
+  --faint: #9aa3b2;
+  --amber: #f59e0b;
+  --amber-soft: #fef3c7;
+  --green: #16a34a;
+  --green-soft: #dcfce7;
+  --red: #dc2626;
+  --red-soft: #fee2e2;
+
+  --font-display: "Space Grotesk", "Segoe UI", sans-serif;
+  --font-body: "Inter", "Segoe UI", "Microsoft YaHei", sans-serif;
+  --font-mono: "IBM Plex Mono", Consolas, monospace;
+
+  --radius-lg: 16px;
+  --radius-md: 10px;
+  --radius-sm: 6px;
+  --shadow-sm: 0 1px 2px rgba(14, 21, 38, 0.06);
+  --shadow-md: 0 8px 24px rgba(14, 21, 38, 0.08);
+
+  --el-color-primary: #0e1526;
+  --el-color-primary-light-3: #27334d;
+  --el-color-primary-light-5: #4a5877;
+  --el-color-primary-light-7: #8b96ae;
+  --el-color-primary-light-8: #c3cad9;
+  --el-color-primary-light-9: #eef1f7;
+  --el-color-primary-dark-2: #0b1120;
+  --el-border-radius-base: 10px;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
+html,
+body,
+#app {
+  height: 100%;
+}
+
 body {
-  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
-  background: #f5f7fa;
-  color: #303133;
-  min-height: 100vh;
+  font-family: var(--font-body);
+  background: var(--canvas);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.wordmark {
+  font-family: var(--font-display);
+  font-weight: 600;
 }
 
 .page {
@@ -21,15 +88,40 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
 
 .page-title {
-  font-size: 22px;
+  font-family: var(--font-display);
+  font-size: 24px;
   font-weight: 600;
 }
 
 .muted {
-  color: #909399;
+  color: var(--muted);
   font-size: 13px;
+}
+
+.panel {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.panel-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

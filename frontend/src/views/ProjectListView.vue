@@ -1,77 +1,82 @@
 <template>
-  <div class="page">
+  <div class="page projects-page">
     <header class="page-header">
-      <div>
-        <h1 class="page-title">AI 灵码平台</h1>
-        <p class="muted">你好，{{ auth.user?.username }}</p>
+      <div class="brand-line">
+        <p class="eyebrow">AI · Lingma Studio</p>
+        <h1 class="wordmark page-title">项目</h1>
       </div>
-      <div>
-        <el-button type="primary" @click="openCreate">新建项目</el-button>
-        <el-button @click="logout">退出登录</el-button>
+      <div class="head-actions">
+        <span class="mono user-chip">{{ auth.user?.username }}</span>
+        <button class="btn primary" @click="openCreate">新建项目</button>
+        <button class="btn ghost" @click="logout">退出</button>
       </div>
     </header>
 
-    <el-row v-if="projects.length" :gutter="16">
-      <el-col v-for="p in projects" :key="p.id" :xs="24" :sm="12" :md="8">
-        <el-card class="project-card" shadow="hover">
-          <div class="card-head">
-            <h3>{{ p.name }}</h3>
-            <el-tag size="small">{{ p.tech_stack }}</el-tag>
-          </div>
-          <p class="muted card-desc">{{ p.description || "暂无描述" }}</p>
-          <p class="muted">模板：{{ p.template }} · {{ p.status }}</p>
-          <div class="card-actions">
-            <el-button size="small" type="primary" @click="openGeneration(p)">
-              生成对话
-            </el-button>
-            <el-button size="small" @click="openPreview(p)">预览</el-button>
-            <el-button size="small" type="danger" plain @click="remove(p)">
-              删除
-            </el-button>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
-    <el-empty v-else description="还没有项目，点击右上角新建" />
+    <div v-if="projects.length" class="grid">
+      <article v-for="p in projects" :key="p.id" class="panel project-card">
+        <div class="card-top">
+          <h3 class="wordmark card-name">{{ p.name }}</h3>
+          <span class="mono tech">{{ p.tech_stack }}</span>
+        </div>
+        <p class="card-desc">{{ p.description || "暂无描述" }}</p>
+        <p class="mono card-meta">
+          {{ p.template }} · {{ p.status }}
+        </p>
+        <div class="card-actions">
+          <button class="btn primary sm" @click="openGeneration(p)">生成对话</button>
+          <button class="btn ghost sm" @click="openPreview(p)">预览</button>
+          <button class="btn danger sm" @click="remove(p)">删除</button>
+        </div>
+      </article>
+    </div>
+    <div v-else class="panel empty-state">
+      <p class="empty-mark">▧</p>
+      <p class="empty-title">还没有项目</p>
+      <p class="muted">新建一个项目，用一句话描述你想要的页面</p>
+      <button class="btn primary" @click="openCreate">新建项目</button>
+    </div>
 
-    <el-dialog v-model="dialogVisible" title="新建项目" width="480px">
-      <el-form label-position="top">
-        <el-form-item label="项目名称" required>
-          <el-input v-model="form.name" placeholder="例如：我的个人名片" />
-        </el-form-item>
-        <el-form-item label="起始模板">
-          <el-select v-model="form.template" style="width: 100%">
-            <el-option label="空白项目" value="blank" />
-            <el-option
+    <div v-if="dialogVisible" class="mask" @click.self="dialogVisible = false">
+      <form class="panel dialog" @submit.prevent="create">
+        <p class="panel-title">新建项目</p>
+        <label class="field">
+          <span class="mono label">项目名称</span>
+          <input v-model="form.name" placeholder="例如：我的个人名片" autofocus />
+        </label>
+        <label class="field">
+          <span class="mono label">起始模板</span>
+          <select v-model="form.template">
+            <option value="blank">空白项目</option>
+            <option
               v-for="t in templates"
               :key="t.id"
-              :label="`${t.name}（${t.tech_stack}）`"
               :value="t.name"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="技术栈">
-          <el-select v-model="form.tech_stack" style="width: 100%">
-            <el-option label="纯 HTML/CSS/JS" value="html" />
-            <el-option label="Vue 3 + Vite" value="vue3" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="描述">
-          <el-input
-            v-model="form.description"
-            type="textarea"
-            :rows="2"
-            placeholder="可选"
-          />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="creating" @click="create">
-          创建
-        </el-button>
-      </template>
-    </el-dialog>
+            >
+              {{ t.name }}（{{ t.tech_stack }}）
+            </option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="mono label">技术栈</span>
+          <select v-model="form.tech_stack">
+            <option value="html">纯 HTML/CSS/JS</option>
+            <option value="vue3">Vue 3 + Vite</option>
+          </select>
+        </label>
+        <label class="field">
+          <span class="mono label">描述（可选）</span>
+          <textarea v-model="form.description" rows="2" />
+        </label>
+        <div class="dialog-actions">
+          <button type="button" class="btn ghost" @click="dialogVisible = false">
+            取消
+          </button>
+          <button type="submit" class="btn primary" :disabled="creating">
+            {{ creating ? "创建中…" : "创建" }}
+          </button>
+        </div>
+      </form>
+    </div>
   </div>
 </template>
 
@@ -116,7 +121,7 @@ function openCreate() {
 
 async function create() {
   if (!form.name.trim()) {
-    ElMessage.warning("请输入项目名称");
+    ElMessage.warning("先给项目起个名字");
     return;
   }
   creating.value = true;
@@ -163,20 +168,183 @@ function logout() {
 </script>
 
 <style scoped>
-.project-card {
-  margin-bottom: 16px;
+.projects-page {
+  max-width: 1080px;
 }
-.card-head {
+.brand-line .eyebrow {
+  color: var(--amber);
+  margin-bottom: 4px;
+}
+.head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.user-chip {
+  font-size: 12px;
+  color: var(--muted);
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  padding: 5px 12px;
+  background: var(--paper);
+}
+.btn {
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  padding: 9px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn.sm {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+.btn.primary {
+  background: var(--ink-900);
+  color: #fff;
+}
+.btn.primary:hover {
+  background: var(--ink-800);
+}
+.btn.ghost {
+  background: var(--paper);
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+.btn.ghost:hover {
+  border-color: var(--ink-700);
+}
+.btn.danger {
+  background: transparent;
+  border-color: var(--line-strong);
+  color: var(--red);
+}
+.btn.danger:hover {
+  border-color: var(--red);
+  background: var(--red-soft);
+}
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+.project-card {
+  padding: 18px;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.project-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+.card-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   margin-bottom: 8px;
 }
+.card-name {
+  font-size: 17px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tech {
+  font-size: 11px;
+  color: var(--amber);
+  background: var(--amber-soft);
+  border-radius: 6px;
+  padding: 3px 8px;
+  flex-shrink: 0;
+}
 .card-desc {
-  margin: 6px 0;
-  min-height: 20px;
+  font-size: 13px;
+  color: var(--muted);
+  min-height: 38px;
+  line-height: 1.5;
+}
+.card-meta {
+  font-size: 11px;
+  color: var(--faint);
+  margin: 10px 0 14px;
 }
 .card-actions {
-  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+}
+.empty-state {
+  padding: 64px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
+}
+.empty-mark {
+  font-size: 42px;
+  color: var(--line-strong);
+}
+.empty-title {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 600;
+}
+.mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(11, 17, 32, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+}
+.dialog {
+  width: min(440px, 92%);
+  padding: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  border-top: 3px solid var(--amber);
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.label {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.field input,
+.field select,
+.field textarea {
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  padding: 9px 12px;
+  font-size: 14px;
+  font-family: var(--font-body);
+  outline: none;
+  background: var(--paper);
+  color: var(--text);
+}
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+  border-color: var(--ink-700);
+  box-shadow: 0 0 0 3px rgba(14, 21, 38, 0.08);
+}
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
 }
 </style>
