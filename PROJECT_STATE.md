@@ -1,5 +1,5 @@
 # PROJECT_STATE
-更新于：2026-08-15 08:40（每轮结束必须更新）
+更新于：2026-08-15 09:10（每轮结束必须更新）
 
 ## 当前里程碑
 - 里程碑：M1（骨架与核心生成回路）
@@ -124,6 +124,12 @@
       残留 streaming 标记，确保思考切换到 MarkdownView（含代码高亮/列表/加粗）；
       思考内容区改为“文档卡片”样式（琥珀左边线+内边距），Markdown 排版一眼可辨；
       验证 marked+marked-highlight 代码围栏输出 <pre><code class="hljs">
+- [x] Agent 工具调用轮次上限 10 → 50（配置 AI_LINGMA_AGENT_MAX_ITERATIONS=50）
+- [x] 受限环境子进程不可用（NotImplementedError）降级：
+      - run_command 捕获 NotImplementedError 并给出明确原因
+      - node --check 校验命令降级为“跳过+告警”（工具结果 exit_code=0），不再全盘失败
+      - 静态构建门禁中 node 语法检查不可用时仅警告、不阻断构建
+      - pytest 46 passed（新增降级单测）
 
 ## 进行中 / 下一步
 - [ ] 下一步：M2 预览点选修改（ElementPicker、修改工作流、版本快照/回滚、diff 面板）
@@ -162,6 +168,8 @@
   模拟（ls/cat/pwd/dir/type/echo/find/grep/where/cd），输出有长度与条数上限
 - 沙箱 run_command：接受字符串命令自动 shlex 拆分；python3 回退真实 python/py
   （跳过 WindowsApps stub）；python 子进程 PYTHONUTF8=1，输出 GBK/UTF-8 双解码
+- 受限环境降级：子进程 NotImplementedError → BuildError；node --check 跳过并告警，
+  npm 等构建命令在环境不支持时仍明确失败（不伪造构建成功）
 - 管理员设置（注册开关/配额）暂为内存态，重启恢复 env 默认值；M5 做持久化
 - 登录为无状态 JWT，logout 仅前端丢弃令牌；黑名单在 M5 补齐
 - 项目删除先停任务（当前无任务）再清理库记录与工作区目录

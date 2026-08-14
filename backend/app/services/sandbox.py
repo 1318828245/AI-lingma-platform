@@ -77,6 +77,8 @@ async def run_command(
             env=env,
         )
         output, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except NotImplementedError:
+        raise BuildError("当前环境不支持执行子进程命令（NotImplementedError）")
     except asyncio.TimeoutError:
         try:
             proc.kill()
@@ -250,7 +252,13 @@ async def _real_build(
     if js_files:
         await log_line(f"real: 语法检查 {len(js_files)} 个 JS 文件")
         for rel in js_files:
-            code, output = await run_command(["node", "--check", rel], workspace, timeout=120)
+            try:
+                code, output = await run_command(
+                    ["node", "--check", rel], workspace, timeout=120
+                )
+            except BuildError as exc:
+                await log_line(f"警告：node 语法检查不可用，跳过 {rel}（{exc}）")
+                continue
             if code != 0:
                 errors.append(f"{rel}: {output.strip()[:300]}")
             for line in output.splitlines():

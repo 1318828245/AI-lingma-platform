@@ -195,6 +195,19 @@ async def _execute_tool(state: GenerationState, name: str, args: dict) -> str:
         try:
             code, output = await run_command(command, workspace, timeout=180)
         except BuildError as exc:
+            # 环境不支持子进程时，node --check 这类校验命令降级为跳过（带告警），
+            # 避免整个生成因环境限制而失败
+            if (
+                command[:2] == ["node", "--check"]
+                and "不支持执行子进程" in str(exc)
+            ):
+                return json.dumps(
+                    {
+                        "exit_code": 0,
+                        "output": "警告：当前环境不支持 node 子进程，语法检查已跳过",
+                    },
+                    ensure_ascii=False,
+                )
             return json.dumps({"error": str(exc)}, ensure_ascii=False)
         return json.dumps(
             {"exit_code": code, "output": output[-4000:]}, ensure_ascii=False

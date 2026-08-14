@@ -57,7 +57,7 @@ class Settings(BaseSettings):
     llm_thinking_enabled: bool = True
 
     # 生成 Agent（ReAct 工具循环）
-    agent_max_iterations: int = 10
+    agent_max_iterations: int = 50
 
     @property
     def database_url_default(self) -> str:

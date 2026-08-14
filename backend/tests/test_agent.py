@@ -309,3 +309,89 @@ def test_agent_run_command_string_normalized(client, admin_headers, monkeypatch)
     assert completed
     assert completed[0]["ok"] is True
     assert completed[0]["detail"] == "node -e console.log(1)"
+
+
+def test_agent_node_check_degrades_when_subprocess_unsupported(
+    client, admin_headers, monkeypatch
+):
+    import app.agents.generation.agent as agent_mod
+    from app.services.sandbox import BuildError as SandboxBuildError
+
+    project = client.post(
+        "/api/projects",
+        headers=admin_headers,
+        json={"name": "Agent降级单测", "template": "blank", "tech_stack": "html"},
+    ).json()
+    me = client.get("/api/users/me", headers=admin_headers).json()
+    sessions = client.get(
+        "/api/sessions", headers=admin_headers, params={"project_id": project["id"]}
+    ).json()
+    state = _make_state(project["id"], me["id"], sessions[0]["id"])
+
+    async def fake_run_command(command, cwd, timeout=180):
+        raise SandboxBuildError(
+            "当前环境不支持执行子进程命令（NotImplementedError）"
+        )
+
+    monkeypatch.setattr(agent_mod, "run_command", fake_run_command)
+
+    calls = [
+        {
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_check",
+                    "type": "function",
+                    "function": {
+                        "name": "run_command",
+                        "arguments": json.dumps(
+                            {"command": ["node", "--check", "script.js"]}
+                        ),
+                    },
+                }
+            ],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+        },
+        {
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_done",
+                    "type": "function",
+                    "function": {
+                        "name": "finish",
+                        "arguments": json.dumps({"summary": "完成"}),
+                    },
+                }
+            ],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+        },
+    ]
+
+    async def fake_complete(
+        self, messages, tools, on_reasoning=None, on_content=None, temperature=0.2
+    ):
+        return calls.pop(0)
+
+    monkeypatch.setattr(LLMClient, "stream_complete_with_tools", fake_complete)
+
+    async def scenario():
+        broker = get_broker()
+        queue = await broker.subscribe(state["generation_id"])
+        try:
+            await run_generation_agent(state)
+        finally:
+            await broker.unsubscribe(state["generation_id"], queue)
+        events = []
+        while not queue.empty():
+            events.append(queue.get_nowait())
+        return events
+
+    events = asyncio.run(scenario())
+    completed = [
+        e
+        for e in events
+        if e.get("type") == "tool_call_completed" and e.get("tool") == "run_command"
+    ]
+    assert completed
+    assert completed[0]["ok"] is True
