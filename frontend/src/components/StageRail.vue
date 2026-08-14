@@ -5,6 +5,7 @@
       :key="s.key"
       class="item"
       :class="{ active: s.key === stage, done: idx < activeIndex }"
+      :title="s.hint"
     >
       <div class="track">
         <span class="dot">
@@ -28,12 +29,12 @@ import { computed } from "vue";
 const props = defineProps<{ stage: string }>();
 
 const stages = [
-  { key: "parse", title: "解析" },
-  { key: "plan", title: "规划" },
-  { key: "generate", title: "生成" },
-  { key: "build", title: "构建" },
-  { key: "repair", title: "修复" },
-  { key: "done", title: "完成" },
+  { key: "parse", title: "解析", hint: "理解你的需求" },
+  { key: "plan", title: "规划", hint: "安排要做哪些改动" },
+  { key: "generate", title: "生成", hint: "正在写代码" },
+  { key: "build", title: "构建", hint: "检查能否正常运行" },
+  { key: "repair", title: "修复", hint: "修正发现的问题" },
+  { key: "done", title: "完成", hint: "已经可以预览了" },
 ];
 
 const activeIndex = computed(() => {
@@ -69,6 +70,7 @@ const activeIndex = computed(() => {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
 }
 .item.done .dot {
   background: var(--green-soft);
@@ -100,9 +102,11 @@ const activeIndex = computed(() => {
 }
 .connector {
   flex: 1;
-  height: 1.5px;
+  height: 2px;
   background: var(--line);
   margin: 0 8px;
+  border-radius: 2px;
+  transition: background 0.2s;
 }
 .connector.lit {
   background: var(--green);
@@ -113,9 +117,10 @@ const activeIndex = computed(() => {
   font-size: 12px;
   color: var(--muted);
   white-space: nowrap;
+  transition: color 0.2s;
 }
 .item.active .label {
-  color: var(--amber);
+  color: #b97f1c;
   font-weight: 600;
 }
 </style>

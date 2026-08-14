@@ -2,7 +2,7 @@
   <div class="workspace">
     <header class="topbar">
       <div class="left">
-        <button class="back" @click="$router.push('/')">←</button>
+        <button class="back" title="返回项目列表" @click="$router.push('/')">←</button>
         <div>
           <p class="eyebrow">AI · Lingma Studio</p>
           <h1 class="name">{{ project?.name || "生成对话" }}</h1>
@@ -10,7 +10,11 @@
       </div>
       <div class="right">
         <span class="state" :class="genStateClass">{{ genStateLabel }}</span>
-        <button class="ghost" @click="$router.push(`/projects/${projectId}/preview`)">
+        <button
+          class="ghost"
+          title="在新页面单独查看预览"
+          @click="$router.push(`/projects/${projectId}/preview`)"
+        >
           全屏预览
         </button>
       </div>
@@ -22,7 +26,7 @@
           <div class="stage-head">
             <span class="panel-title">构建流水线</span>
             <span v-if="runningGen" class="mono stage-meta">
-              #{{ runningGen.build_attempt }}
+              第 {{ runningGen.build_attempt }} 次构建
             </span>
           </div>
           <StageRail :stage="progressStage" />
@@ -49,8 +53,9 @@
               </div>
             </div>
             <div v-if="!messages.length" class="empty-tip">
-              <p class="empty-mark">⌘</p>
-              <p>描述你要做的页面，例如：</p>
+              <p class="empty-mark" aria-hidden="true">✦</p>
+              <p class="empty-title">从这里开始</p>
+              <p>描述你想做的页面，比如：</p>
               <p class="mono example">“做一个深色风格的个人名片页，展示技能与作品”</p>
             </div>
           </div>
@@ -61,6 +66,7 @@
               :rows="3"
               :disabled="!!runningGen"
               placeholder="描述需求，右侧预览会随生成实时更新…"
+              @keydown.enter.exact.prevent="submitRequirement"
             />
             <div class="input-side">
               <el-button
@@ -79,6 +85,7 @@
               >
                 取消
               </el-button>
+              <span class="mono input-hint">Enter 发送 · Shift+Enter 换行</span>
             </div>
           </div>
         </section>
@@ -86,13 +93,13 @@
         <section class="panel log-card">
           <div class="log-head">
             <span class="panel-title">实时日志</span>
-            <span class="mono log-count">{{ logs.length }}</span>
+            <span class="mono log-count">{{ logs.length }} 条</span>
           </div>
           <div class="log-body">
             <p v-for="(line, idx) in logs" :key="idx" class="log-line">
               {{ line }}
             </p>
-            <p v-if="!logs.length" class="log-empty">等待任务开始…</p>
+            <p v-if="!logs.length" class="log-empty">还没开始，提交需求后这里会滚动起来</p>
           </div>
         </section>
       </aside>
@@ -195,7 +202,7 @@ async function submitRequirement() {
     previewRefresh.value += 1;
     watchGeneration(gen.id);
   } catch (error: any) {
-    ElMessage.error(error.response?.data?.detail || "提交失败");
+    ElMessage.error(error.response?.data?.detail || "提交失败，请重试");
   } finally {
     submitting.value = false;
   }
@@ -232,13 +239,13 @@ function watchGeneration(genId: number) {
   });
   eventSource.addEventListener("error", (e) => {
     const event = JSON.parse((e as MessageEvent).data) as SseEvent;
-    ElMessage.error(String(event.error || "任务失败"));
+    ElMessage.error(String(event.error || "任务失败了"));
     progressStage.value = "done";
     eventSource?.close();
     refreshStatus();
   });
   eventSource.addEventListener("cancelled", () => {
-    ElMessage.warning("任务已取消");
+    ElMessage.warning("已取消这次生成");
     progressStage.value = "done";
     eventSource?.close();
     refreshStatus();
@@ -275,8 +282,8 @@ async function cancel() {
 }
 .topbar {
   height: 58px;
-  background: var(--ink-900);
-  color: #e7ecf5;
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -284,7 +291,8 @@ async function cancel() {
   flex-shrink: 0;
 }
 .topbar .eyebrow {
-  color: #64748b;
+  color: var(--amber);
+  margin-bottom: 2px;
 }
 .left {
   display: flex;
@@ -294,16 +302,18 @@ async function cancel() {
 .back {
   width: 34px;
   height: 34px;
-  border-radius: 10px;
-  border: 1px solid var(--ink-700);
-  background: transparent;
-  color: #cbd5e1;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line-strong);
+  background: var(--paper);
+  color: var(--muted);
   font-size: 16px;
   cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
 }
 .back:hover {
-  background: var(--ink-800);
-  color: #fff;
+  color: var(--primary);
+  border-color: var(--primary);
+  background: var(--primary-soft);
 }
 .name {
   font-family: var(--font-display);
@@ -318,36 +328,42 @@ async function cancel() {
 .state {
   font-family: var(--font-mono);
   font-size: 11px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   padding: 4px 12px;
   border-radius: 999px;
-  border: 1px solid var(--ink-700);
-  color: #94a3b8;
+  border: 1px solid var(--line-strong);
+  color: var(--muted);
+  background: var(--canvas);
 }
 .state.ok {
-  color: #4ade80;
-  border-color: rgba(74, 222, 128, 0.35);
+  color: var(--green);
+  border-color: rgba(47, 158, 111, 0.35);
+  background: var(--green-soft);
 }
 .state.bad {
-  color: #f87171;
-  border-color: rgba(248, 113, 113, 0.35);
+  color: var(--red);
+  border-color: rgba(224, 91, 91, 0.35);
+  background: var(--red-soft);
 }
 .state.run {
-  color: var(--amber);
-  border-color: rgba(245, 158, 11, 0.4);
+  color: #b97f1c;
+  border-color: rgba(242, 169, 59, 0.4);
+  background: var(--amber-soft);
 }
 .ghost {
-  border: 1px solid var(--ink-700);
-  background: transparent;
-  color: #cbd5e1;
+  border: 1px solid var(--line-strong);
+  background: var(--paper);
+  color: var(--ink);
   padding: 7px 14px;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   font-size: 13px;
   cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
 }
 .ghost:hover {
-  background: var(--ink-800);
-  color: #fff;
+  color: var(--primary);
+  border-color: var(--primary);
+  background: var(--primary-soft);
 }
 .split {
   flex: 1;
@@ -405,14 +421,14 @@ async function cancel() {
 .bubble {
   max-width: 82%;
   padding: 10px 14px;
-  border-radius: 14px;
-  background: var(--canvas);
+  border-radius: 16px;
+  background: var(--paper);
   border: 1px solid var(--line);
+  box-shadow: var(--shadow-sm);
 }
 .chat-msg.user .bubble {
-  background: var(--ink-900);
-  border-color: var(--ink-900);
-  color: #e7ecf5;
+  background: var(--primary-soft);
+  border-color: transparent;
 }
 .who {
   display: block;
@@ -422,7 +438,7 @@ async function cancel() {
   margin-bottom: 4px;
 }
 .chat-msg.user .who {
-  color: #94a3b8;
+  color: var(--primary);
 }
 .bubble p {
   font-size: 14px;
@@ -430,24 +446,33 @@ async function cancel() {
   white-space: pre-wrap;
 }
 .empty-tip {
-  margin-top: 48px;
+  margin-top: 44px;
   text-align: center;
   color: var(--muted);
   font-size: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
 }
 .empty-mark {
-  font-size: 34px;
-  color: var(--line-strong);
-  margin-bottom: 8px;
+  font-size: 30px;
+  color: var(--primary);
+  opacity: 0.5;
+}
+.empty-title {
+  color: var(--ink);
+  font-weight: 600;
+  font-size: 15px;
 }
 .example {
   display: inline-block;
-  margin-top: 8px;
-  padding: 6px 12px;
+  margin-top: 6px;
+  padding: 7px 12px;
   background: var(--amber-soft);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   font-size: 12px;
-  color: #92400e;
+  color: #9a6b16;
 }
 .input-row {
   display: flex;
@@ -460,6 +485,12 @@ async function cancel() {
   flex-direction: column;
   gap: 8px;
   justify-content: flex-end;
+  align-items: stretch;
+}
+.input-hint {
+  font-size: 10px;
+  color: var(--faint);
+  text-align: center;
 }
 .log-card {
   flex-shrink: 0;
@@ -467,20 +498,20 @@ async function cancel() {
 .log-body {
   height: 150px;
   overflow-y: auto;
-  background: var(--ink-950);
+  background: var(--warm-dark);
   border-radius: var(--radius-md);
   padding: 10px 12px;
 }
 .log-line {
   font-family: var(--font-mono);
   font-size: 12px;
-  color: #cbd5e1;
+  color: #e8e2d8;
   line-height: 1.7;
   word-break: break-all;
 }
 .log-empty {
   font-size: 12px;
-  color: #64748b;
+  color: #8b8376;
 }
 .preview-pane {
   min-width: 0;

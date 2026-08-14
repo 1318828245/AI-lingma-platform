@@ -1,7 +1,7 @@
 <template>
   <div class="preview-panel">
     <div class="head">
-      <span class="panel-title">Live Preview</span>
+      <span class="panel-title">实时预览</span>
       <span class="chip" :class="statusClass">{{ statusLabel }}</span>
       <span class="spacer" />
       <div class="seg mono">
@@ -16,8 +16,9 @@
           {{ v.label }}
         </button>
       </div>
-      <button class="icon-btn" title="刷新预览" @click="reload">
-        ⟳
+      <button class="icon-btn" title="重新加载预览" @click="reload">
+        <span aria-hidden="true">⟳</span>
+        刷新
       </button>
     </div>
 
@@ -32,14 +33,18 @@
       />
       <div v-else-if="loading" class="empty">
         <span class="spinner" />
-        <p class="eyebrow">正在检查预览状态</p>
+        <p class="muted">正在查看预览状态…</p>
       </div>
       <div v-else class="empty">
-        <p class="empty-icon">▧</p>
+        <p class="empty-icon" aria-hidden="true">✦</p>
         <p class="empty-title">
-          {{ previewStatus?.status === "not_generated" ? "还没有可预览的构建产物" : "项目还是空的" }}
+          {{
+            previewStatus?.status === "not_generated"
+              ? "这里会显示你生成的页面"
+              : "项目还是空的"
+          }}
         </p>
-        <p class="muted">完成一次生成后，这里会自动亮起来</p>
+        <p class="muted">在左侧描述需求，完成后预览会自动亮起来</p>
       </div>
     </div>
 
@@ -48,7 +53,7 @@
         <span class="lamp" :class="{ on: running }" />
         {{ stageLabel }}
       </span>
-      <span v-if="buildAttempt > 0">build #{{ buildAttempt }}</span>
+      <span v-if="buildAttempt > 0">构建 #{{ buildAttempt }}</span>
       <span class="foot-url">{{ previewUrl }}</span>
     </div>
   </div>
@@ -91,7 +96,7 @@ const frameSrc = computed(
     `/preview/${props.projectId}/?token=${encodeURIComponent(auth.accessToken)}&t=${frameKey.value}`
 );
 const previewUrl = computed(
-  () => `/preview/${props.projectId}/ — ${previewStatus.value?.mode ?? "…"}`
+  () => `/preview/${props.projectId}/ · ${previewStatus.value?.mode ?? "…"}`
 );
 
 const statusLabel = computed(() => {
@@ -137,80 +142,88 @@ watch(
   min-height: 0;
   display: flex;
   flex-direction: column;
-  background: var(--ink-900);
-  border: 1px solid var(--ink-700);
+  background: var(--paper);
+  border: 1px solid var(--line);
   border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
   overflow: hidden;
 }
 .head {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   padding: 10px 14px;
-  background: var(--ink-900);
-  color: #cbd5e1;
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
 }
 .head .panel-title {
-  color: #64748b;
+  color: var(--muted);
 }
 .chip {
   font-family: var(--font-mono);
   font-size: 11px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   padding: 3px 10px;
   border-radius: 999px;
-  border: 1px solid var(--ink-700);
-  color: #94a3b8;
+  border: 1px solid var(--line-strong);
+  color: var(--muted);
+  background: var(--canvas);
 }
 .chip.ok {
-  color: #4ade80;
-  border-color: rgba(74, 222, 128, 0.35);
-  background: rgba(74, 222, 128, 0.08);
+  color: var(--green);
+  border-color: rgba(47, 158, 111, 0.35);
+  background: var(--green-soft);
 }
 .chip.warn {
-  color: var(--amber);
-  border-color: rgba(245, 158, 11, 0.35);
-  background: rgba(245, 158, 11, 0.08);
+  color: #b97f1c;
+  border-color: rgba(242, 169, 59, 0.4);
+  background: var(--amber-soft);
 }
 .spacer {
   flex: 1;
 }
 .seg {
   display: flex;
-  border: 1px solid var(--ink-700);
-  border-radius: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
   overflow: hidden;
+  background: var(--canvas);
 }
 .seg-btn {
   border: none;
   background: transparent;
-  color: #94a3b8;
+  color: var(--muted);
   font-family: var(--font-mono);
   font-size: 11px;
   padding: 5px 12px;
   cursor: pointer;
+  transition: background 0.15s, color 0.15s;
 }
 .seg-btn + .seg-btn {
-  border-left: 1px solid var(--ink-700);
+  border-left: 1px solid var(--line-strong);
 }
 .seg-btn.on {
-  background: var(--ink-800);
-  color: #f8fafc;
+  background: var(--paper);
+  color: var(--primary);
+  font-weight: 500;
 }
 .icon-btn {
-  border: 1px solid var(--ink-700);
-  background: transparent;
-  color: #94a3b8;
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--line-strong);
+  background: var(--paper);
+  color: var(--muted);
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  font-size: 15px;
-  line-height: 1;
+  font-size: 12px;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
 }
 .icon-btn:hover {
-  color: #fff;
-  background: var(--ink-800);
+  color: var(--primary);
+  border-color: var(--primary);
+  background: var(--primary-soft);
 }
 .canvas {
   flex: 1;
@@ -219,41 +232,46 @@ watch(
   justify-content: center;
   align-items: flex-start;
   overflow: auto;
-  background: #e8ebf2;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(91, 103, 241, 0.05), transparent 45%),
+    var(--canvas-deep);
   padding: 14px;
 }
 .canvas iframe {
   height: 100%;
   border: none;
-  border-radius: 8px;
-  background: #fff;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  border-radius: var(--radius-md);
+  background: var(--paper);
+  box-shadow: 0 8px 28px rgba(60, 52, 42, 0.18);
   transition: width 0.2s ease;
 }
 .empty {
   height: 100%;
-  min-height: 260px;
+  min-height: 240px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  color: #94a3b8;
+  text-align: center;
+  padding: 20px;
 }
 .empty-icon {
-  font-size: 40px;
-  color: var(--ink-700);
+  font-size: 34px;
+  color: var(--primary);
+  opacity: 0.55;
 }
 .empty-title {
-  color: #cbd5e1;
+  color: var(--ink);
   font-weight: 600;
+  font-size: 15px;
 }
 .spinner {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
-  border: 2px solid var(--ink-700);
-  border-top-color: var(--amber);
+  border: 2px solid var(--line-strong);
+  border-top-color: var(--primary);
   animation: spin 0.8s linear infinite;
 }
 @keyframes spin {
@@ -264,27 +282,28 @@ watch(
 .foot {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 14px;
   padding: 8px 14px;
-  background: var(--ink-950);
-  color: #64748b;
+  background: var(--canvas);
+  border-top: 1px solid var(--line);
+  color: var(--muted);
   font-size: 11px;
 }
 .foot-stage {
   display: flex;
   align-items: center;
   gap: 7px;
-  color: #cbd5e1;
+  color: var(--ink);
 }
 .lamp {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--ink-700);
+  background: var(--line-strong);
 }
 .lamp.on {
   background: var(--amber);
-  box-shadow: 0 0 8px rgba(245, 158, 11, 0.8);
+  box-shadow: 0 0 8px rgba(242, 169, 59, 0.85);
 }
 .foot-url {
   margin-left: auto;

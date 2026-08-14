@@ -188,47 +188,6 @@ function logout() {
   padding: 5px 12px;
   background: var(--paper);
 }
-.btn {
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
-  padding: 9px 16px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-.btn.sm {
-  padding: 6px 12px;
-  font-size: 12px;
-}
-.btn.primary {
-  background: var(--ink-900);
-  color: #fff;
-}
-.btn.primary:hover {
-  background: var(--ink-800);
-}
-.btn.ghost {
-  background: var(--paper);
-  border-color: var(--line-strong);
-  color: var(--text);
-}
-.btn.ghost:hover {
-  border-color: var(--ink-700);
-}
-.btn.danger {
-  background: transparent;
-  border-color: var(--line-strong);
-  color: var(--red);
-}
-.btn.danger:hover {
-  border-color: var(--red);
-  background: var(--red-soft);
-}
-.btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
@@ -236,11 +195,12 @@ function logout() {
 }
 .project-card {
   padding: 18px;
-  transition: transform 0.15s, box-shadow 0.15s;
+  transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
 }
 .project-card:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
+  border-color: var(--line-strong);
 }
 .card-top {
   display: flex;
@@ -257,9 +217,9 @@ function logout() {
 }
 .tech {
   font-size: 11px;
-  color: var(--amber);
+  color: #9a6b16;
   background: var(--amber-soft);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 3px 8px;
   flex-shrink: 0;
 }
@@ -288,7 +248,8 @@ function logout() {
 }
 .empty-mark {
   font-size: 42px;
-  color: var(--line-strong);
+  color: var(--primary);
+  opacity: 0.45;
 }
 .empty-title {
   font-family: var(--font-display);
@@ -298,11 +259,12 @@ function logout() {
 .mask {
   position: fixed;
   inset: 0;
-  background: rgba(11, 17, 32, 0.5);
+  background: rgba(46, 42, 38, 0.45);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 50;
+  backdrop-filter: blur(2px);
 }
 .dialog {
   width: min(440px, 92%);
@@ -311,6 +273,7 @@ function logout() {
   flex-direction: column;
   gap: 16px;
   border-top: 3px solid var(--amber);
+  box-shadow: var(--shadow-md);
 }
 .field {
   display: flex;
@@ -338,8 +301,8 @@ function logout() {
 .field input:focus,
 .field select:focus,
 .field textarea:focus {
-  border-color: var(--ink-700);
-  box-shadow: 0 0 0 3px rgba(14, 21, 38, 0.08);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(91, 103, 241, 0.12);
 }
 .dialog-actions {
   display: flex;

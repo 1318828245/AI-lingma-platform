@@ -2,7 +2,9 @@
   <div class="full-preview">
     <header class="bar">
       <div class="left">
-        <button class="back" @click="$router.push(`/projects/${projectId}`)">←</button>
+        <button class="back" title="返回生成对话" @click="$router.push(`/projects/${projectId}`)">
+          ←
+        </button>
         <span class="eyebrow">AI · Lingma Studio</span>
         <span class="name wordmark">{{ project?.name || "实时预览" }}</span>
       </div>
@@ -39,7 +41,7 @@ onMounted(async () => {
   height: 100vh;
   display: flex;
   flex-direction: column;
-  background: var(--ink-950);
+  background: var(--canvas);
 }
 .bar {
   height: 54px;
@@ -47,12 +49,12 @@ onMounted(async () => {
   align-items: center;
   justify-content: space-between;
   padding: 0 16px;
-  background: var(--ink-900);
-  color: #e7ecf5;
+  background: var(--paper);
+  border-bottom: 1px solid var(--line);
   flex-shrink: 0;
 }
 .bar .eyebrow {
-  color: #64748b;
+  color: var(--amber);
 }
 .left {
   display: flex;
@@ -62,30 +64,35 @@ onMounted(async () => {
 .back {
   width: 32px;
   height: 32px;
-  border-radius: 8px;
-  border: 1px solid var(--ink-700);
-  background: transparent;
-  color: #cbd5e1;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line-strong);
+  background: var(--paper);
+  color: var(--muted);
   cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
 }
 .back:hover {
-  background: var(--ink-800);
+  color: var(--primary);
+  border-color: var(--primary);
+  background: var(--primary-soft);
 }
 .name {
   font-size: 15px;
 }
 .ghost {
-  border: 1px solid var(--ink-700);
-  background: transparent;
-  color: #cbd5e1;
-  border-radius: 8px;
+  border: 1px solid var(--line-strong);
+  background: var(--paper);
+  color: var(--ink);
+  border-radius: var(--radius-sm);
   padding: 6px 12px;
   font-size: 12px;
   cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
 }
 .ghost:hover {
-  background: var(--ink-800);
-  color: #fff;
+  color: var(--primary);
+  border-color: var(--primary);
+  background: var(--primary-soft);
 }
 .body {
   flex: 1;
