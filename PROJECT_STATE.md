@@ -1,5 +1,5 @@
 # PROJECT_STATE
-更新于：2026-08-15 02:40（每轮结束必须更新）
+更新于：2026-08-15 03:00（每轮结束必须更新）
 
 ## 当前里程碑
 - 里程碑：M1（骨架与核心生成回路）
@@ -66,6 +66,9 @@
 - [x] 对话流重构：移除独立“实时日志”区域；stage/think/tool_call/file_written/
       build_log/error 全部并入对话记录；思考与构建日志可点击折叠，工具调用带 SVG 图标，
       阶段以琥珀圆点+说明展示；窄屏（≤1024px）上下堆叠；npm run build + 冒烟通过
+- [x] 修复生成对话页白屏：GenerationChatView 使用了 computed 但漏导入（vite build
+      不做类型检查导致构建通过、运行时崩溃）；已补导入并接入 vue-tsc 类型门禁
+      （npm run typecheck），构建脚本改为 typecheck && vite build
 
 ## 进行中 / 下一步
 - [ ] 下一步：M2 预览点选修改（ElementPicker、修改工作流、版本快照/回滚、diff 面板）

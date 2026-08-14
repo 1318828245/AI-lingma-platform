@@ -65,13 +65,21 @@ import { getPreviewStatus } from "../api/projects";
 import { useAuthStore } from "../stores/auth";
 import type { PreviewStatus } from "../types";
 
-const props = defineProps<{
+const props = withDefaults(
+  defineProps<{
   projectId: number;
   stage?: string;
   running?: boolean;
   buildAttempt?: number;
   refreshToken?: number;
-}>();
+}>(),
+  {
+    stage: "idle",
+    running: false,
+    buildAttempt: 0,
+    refreshToken: 0,
+  }
+);
 
 const auth = useAuthStore();
 const previewStatus = ref<PreviewStatus | null>(null);
