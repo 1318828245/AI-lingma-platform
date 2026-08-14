@@ -293,6 +293,8 @@ let seq = 0;
 let thinkBuffer = "";
 let assistantBuffer = "";
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
+let activeThinkId: number | null = null;
+let activeAssistantId: number | null = null;
 
 function push(partial: Omit<ChatEntry, "id">) {
   const entry: ChatEntry = { id: ++seq, collapsed: true, ...partial };
@@ -321,8 +323,29 @@ function lastEntry() {
 }
 
 function queueDelta(kind: "think" | "assistant", text: string) {
-  if (kind === "think") thinkBuffer += text;
-  else assistantBuffer += text;
+  if (kind === "think") {
+    if (activeThinkId === null) {
+      const entry = push({
+        kind: "think",
+        content: "",
+        streaming: true,
+        collapsed: false,
+      });
+      activeThinkId = entry.id;
+    }
+    thinkBuffer += text;
+  } else {
+    if (activeAssistantId === null) {
+      const entry = push({
+        kind: "assistant",
+        content: "",
+        streaming: true,
+        collapsed: false,
+      });
+      activeAssistantId = entry.id;
+    }
+    assistantBuffer += text;
+  }
   if (flushTimer === null) {
     flushTimer = setTimeout(flushBuffers, 40);
   }
@@ -334,30 +357,38 @@ function flushBuffers() {
     flushTimer = null;
   }
   if (thinkBuffer) {
-    let entry = lastEntry();
-    if (entry?.kind !== "think" || !entry.streaming) {
-      entry = push({
-        kind: "think",
-        content: "",
-        streaming: true,
-        collapsed: false,
-      });
+    const entry = entries.value.find((e) => e.id === activeThinkId);
+    if (entry) {
+      entry.content = (entry.content || "") + thinkBuffer;
     }
-    entry.content = (entry.content || "") + thinkBuffer;
     thinkBuffer = "";
   }
   if (assistantBuffer) {
-    let entry = lastEntry();
-    if (entry?.kind !== "assistant" || !entry.streaming) {
-      entry = push({
-        kind: "assistant",
-        content: "",
-        streaming: true,
-        collapsed: false,
-      });
+    const entry = entries.value.find((e) => e.id === activeAssistantId);
+    if (entry) {
+      entry.content = (entry.content || "") + assistantBuffer;
     }
-    entry.content = (entry.content || "") + assistantBuffer;
     assistantBuffer = "";
+  }
+  bumpStream();
+}
+
+function endStreaming() {
+  flushBuffers();
+  if (activeThinkId !== null) {
+    const entry = entries.value.find((e) => e.id === activeThinkId);
+    if (entry) {
+      entry.streaming = false;
+      entry.collapsed = true; // 思考完成自动收起
+    }
+    activeThinkId = null;
+  }
+  if (activeAssistantId !== null) {
+    const entry = entries.value.find((e) => e.id === activeAssistantId);
+    if (entry) {
+      entry.streaming = false;
+    }
+    activeAssistantId = null;
   }
   bumpStream();
 }
@@ -438,7 +469,7 @@ function historyToEntries(history: Message[]): ChatEntry[] {
     }
     if (m.msg_type === "think") {
       currentTools = null;
-      list.push({ id: ++seq, kind: "think", content: m.content, collapsed: false });
+      list.push({ id: ++seq, kind: "think", content: m.content, collapsed: true });
       continue;
     }
     if (m.msg_type === "tool_call") {
@@ -567,28 +598,17 @@ function watchGeneration(genId: number) {
   });
 
   eventSource.addEventListener("stream_end", () => {
-    const last = lastEntry();
-    if (
-      last?.streaming &&
-      (last.kind === "think" || last.kind === "assistant")
-    ) {
-      last.streaming = false;
-    }
-    bumpStream();
+    endStreaming();
   });
 
   eventSource.addEventListener("tool_call_started", (e) => {
-    flushBuffers();
+    endStreaming();
     const event = JSON.parse((e as MessageEvent).data) as SseEvent;
     const tool = String(event.tool || "");
     const args = (event.args || {}) as Record<string, unknown>;
     let detail = "";
     if (typeof args.path === "string") detail = args.path;
     else if (Array.isArray(args.command)) detail = args.command.join(" ");
-    const previous = lastEntry();
-    if (previous?.kind === "think" && previous.streaming) {
-      previous.streaming = false;
-    }
     let group = lastEntry();
     if (group?.kind !== "tools") {
       group = push({ kind: "tools", items: [] });
@@ -660,12 +680,24 @@ function watchGeneration(genId: number) {
     flushBuffers();
     const event = JSON.parse((e as MessageEvent).data) as SseEvent;
     const summary = String(event.summary || "");
-    const previous = lastEntry();
-    if (previous?.kind === "assistant" && previous.streaming) {
-      previous.content = summary;
-      previous.streaming = false;
+    const streamedAssistant =
+      activeAssistantId !== null
+        ? entries.value.find((entry) => entry.id === activeAssistantId)
+        : null;
+    if (streamedAssistant) {
+      streamedAssistant.content = summary;
+      streamedAssistant.streaming = false;
+      activeAssistantId = null;
     } else {
       push({ kind: "assistant", content: summary, collapsed: false });
+    }
+    if (activeThinkId !== null) {
+      const thinkEntry = entries.value.find((entry) => entry.id === activeThinkId);
+      if (thinkEntry) {
+        thinkEntry.streaming = false;
+        thinkEntry.collapsed = true;
+      }
+      activeThinkId = null;
     }
     progressStage.value = "done";
     eventSource?.close();
@@ -674,7 +706,7 @@ function watchGeneration(genId: number) {
   });
 
   eventSource.addEventListener("error", (e) => {
-    flushBuffers();
+    endStreaming();
     const event = JSON.parse((e as MessageEvent).data) as SseEvent;
     push({ kind: "error", content: String(event.error || "任务失败了") });
     progressStage.value = "done";
@@ -683,7 +715,7 @@ function watchGeneration(genId: number) {
   });
 
   eventSource.addEventListener("cancelled", () => {
-    flushBuffers();
+    endStreaming();
     push({ kind: "info", content: "已取消这次生成" });
     progressStage.value = "done";
     eventSource?.close();
