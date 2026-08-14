@@ -1,12 +1,12 @@
 import asyncio
 import json
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.core.deps import get_current_user, get_db
+from app.core.deps import get_current_user, get_current_user_sse, get_db
 from app.models.generation import Generation
 from app.models.user import User
 from app.schemas.generation import GenerationCreate, GenerationMessageIn, GenerationOut
@@ -78,7 +78,7 @@ def get_generation(
 @router.get("/api/generations/{generation_id}/events")
 async def generation_events(
     generation_id: int,
-    user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user_sse),
     db: Session = Depends(get_db),
 ):
     get_generation_for_user(db, generation_id, user.id)

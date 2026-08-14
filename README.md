@@ -5,7 +5,7 @@
 
 ## 当前进度（M1 骨架阶段）
 
-已实现：后端骨架（FastAPI + SQLAlchemy 2.x）、全部数据模型、JWT 认证（bcrypt）、内置管理员、3 个种子模板、项目/会话/模板/管理员基础 API、**生成工作流（LangGraph：解析→规划→生成→构建→修复）+ SSE 进度流 + 任务取消/超时/恢复**。
+已实现：后端骨架（FastAPI + SQLAlchemy 2.x）、全部数据模型、JWT 认证（bcrypt）、内置管理员、3 个种子模板、项目/会话/模板/管理员基础 API、**生成工作流（LangGraph：解析→规划→生成→构建→修复）+ SSE 进度流 + 任务取消/超时/恢复**、**Vue 3 前端（登录/项目列表/生成对话/实时预览）+ 服务端预览代理**。M1 里程碑已完成。
 
 ## 快速体验生成流程
 
@@ -50,6 +50,17 @@ python -m uvicorn app.main:app --reload --port 8000
 ```
 
 运行环境：conda `env01-p10-drawimg`（Python 3.10，已预装 langgraph 1.2.x）。
+
+## 启动前端（开发环境，另开一个终端）
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+浏览器打开 `http://127.0.0.1:5173`，用 `admin / admin123` 登录。
+Vite 已配置 `/api` 与 `/preview` 代理到后端 8000。
 
 默认管理员：`admin / admin123`（首次登录后请修改；生产环境通过 `.env` 的
 `AI_LINGMA_ADMIN_USERNAME` / `AI_LINGMA_ADMIN_PASSWORD` 指定）。

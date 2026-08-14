@@ -214,6 +214,10 @@ storage/
 *.db
 *.db-journal
 
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
 # PyPI configuration file
 .pypirc
 
