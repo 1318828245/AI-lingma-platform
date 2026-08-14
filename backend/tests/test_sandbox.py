@@ -38,3 +38,24 @@ def test_run_command_emulated_ls_cat_pwd_grep(tmp_path):
 def test_run_command_whitelist_rejects():
     with pytest.raises(BuildError):
         asyncio.run(run_command(["curl", "http://example.com"], Path("."), timeout=60))
+
+
+def test_run_command_single_string_command(tmp_path):
+    (tmp_path / "index.html").write_text("line1\nline2\n", encoding="utf-8")
+    code, output = asyncio.run(
+        run_command(
+            "node -e \"const fs=require('fs');console.log(fs.readFileSync('index.html','utf8').split('\\n').length)\"",
+            tmp_path,
+            timeout=60,
+        )
+    )
+    assert code == 0
+    assert "3" in output
+
+
+def test_run_command_python3_fallback(tmp_path):
+    code, output = asyncio.run(
+        run_command(["python3", "-c", "print(1+1)"], tmp_path, timeout=60)
+    )
+    assert code == 0
+    assert "2" in output

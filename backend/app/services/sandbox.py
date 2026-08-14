@@ -6,6 +6,7 @@
 import asyncio
 import fnmatch
 import os
+import shlex
 import shutil
 from pathlib import Path
 
@@ -18,6 +19,7 @@ ALLOWED_COMMANDS = {
     "node",
     "python",
     "python3",
+    "py",
 }
 # 由 Python 内置模拟的只读/检查命令（不依赖外部二进制，Windows 下同样可用）
 EMULATED_COMMANDS = {
@@ -43,6 +45,8 @@ async def run_command(
     cwd: Path,
     timeout: int = 300,
 ) -> tuple[int, str]:
+    if isinstance(command, str):
+        command = shlex.split(command)
     if not command:
         raise BuildError("空命令")
     if command[0] in EMULATED_COMMANDS:
@@ -52,9 +56,7 @@ async def run_command(
             f"命令不在白名单: {command[0]}"
             "（支持 npm/npx/node/python/python3 与内置 ls/cat/pwd/dir/type/echo/find/grep/where）"
         )
-    exe = shutil.which(command[0])
-    if exe is None:
-        exe = shutil.which(command[0] + ".cmd") or shutil.which(command[0] + ".exe")
+    exe = _resolve_exe(command[0])
     if exe is None:
         raise BuildError(f"找不到可执行文件: {command[0]}")
     if exe.lower().endswith((".cmd", ".bat")):
@@ -62,6 +64,10 @@ async def run_command(
     else:
         args = [exe, *command[1:]]
     env = os.environ.copy()
+    if command[0] in ("python", "python3", "py"):
+        # 强制 python 子进程以 UTF-8 输出，避免 GBK 编码导致内容乱码
+        env["PYTHONIOENCODING"] = "utf-8"
+        env["PYTHONUTF8"] = "1"
     try:
         proc = await asyncio.create_subprocess_exec(
             *args,
@@ -78,7 +84,30 @@ async def run_command(
             pass
         raise BuildError(f"命令超时（{timeout}s）: {' '.join(command)}")
     text = output.decode("utf-8", errors="replace")
+    if "\ufffd" in text:
+        text = output.decode("gbk", errors="replace")
     return proc.returncode or 0, text
+
+
+def _resolve_exe(name: str) -> str | None:
+    """解析可执行文件路径；跳过 Windows 商店别名 stub（WindowsApps），
+    python3 找不到时回退到 python/py。"""
+    candidates = {"python3": ["python3", "python", "py"], "python": ["python", "python3", "py"]}.get(
+        name, [name]
+    )
+    found: list[str] = []
+    for cand in candidates:
+        path = (
+            shutil.which(cand)
+            or shutil.which(cand + ".cmd")
+            or shutil.which(cand + ".exe")
+        )
+        if path and path not in found:
+            found.append(path)
+    for path in found:
+        if "WindowsApps" not in path:
+            return path
+    return found[0] if found else None
 
 
 def _is_flag(arg: str) -> bool:

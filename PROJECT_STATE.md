@@ -1,5 +1,5 @@
 # PROJECT_STATE
-更新于：2026-08-15 06:40（每轮结束必须更新）
+更新于：2026-08-15 07:10（每轮结束必须更新）
 
 ## 当前里程碑
 - 里程碑：M1（骨架与核心生成回路）
@@ -105,6 +105,13 @@
       （纯 Python，不依赖外部二进制，Windows 同样可用）；npm/npx/node/python 走真实
       子进程（.cmd 自动经 cmd.exe 包装）；工具描述明确支持范围；
       pytest 42 passed（新增沙箱 4 例）
+- [x] 修复 node -e / python3 -c 失败：
+      - python3 解析到 Windows 商店别名 stub（WindowsApps）→ WinError 1920，
+        改为回退真实 python/py（跳过 WindowsApps）
+      - 模型把整条命令作为单个字符串传入时被白名单拒绝 → 支持 shlex 拆分字符串命令
+      - python 子进程强制 UTF-8 输出，输出解码 UTF-8 失败时回退 GBK，中文不乱码
+      - 实测用户命令：node -e 总行数=4、python3 -c 总行数=3 均返回 0；
+        pytest 44 passed（新增字符串命令/python3 回退 2 例）
 
 ## 进行中 / 下一步
 - [ ] 下一步：M2 预览点选修改（ElementPicker、修改工作流、版本快照/回滚、diff 面板）
@@ -141,6 +148,8 @@
   build/error/info 各自成条
 - 沙箱 run_command：白名单 npm/npx/node/python/python3；只读检查命令由 Python 内置
   模拟（ls/cat/pwd/dir/type/echo/find/grep/where/cd），输出有长度与条数上限
+- 沙箱 run_command：接受字符串命令自动 shlex 拆分；python3 回退真实 python/py
+  （跳过 WindowsApps stub）；python 子进程 PYTHONUTF8=1，输出 GBK/UTF-8 双解码
 - 管理员设置（注册开关/配额）暂为内存态，重启恢复 env 默认值；M5 做持久化
 - 登录为无状态 JWT，logout 仅前端丢弃令牌；黑名单在 M5 补齐
 - 项目删除先停任务（当前无任务）再清理库记录与工作区目录

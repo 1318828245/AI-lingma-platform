@@ -186,6 +186,10 @@ async def _execute_tool(state: GenerationState, name: str, args: dict) -> str:
         return json.dumps({"ok": True, "path": path}, ensure_ascii=False)
     if name == "run_command":
         command = args.get("command") or []
+        if isinstance(command, str):
+            import shlex
+
+            command = shlex.split(command)
         if not command:
             return json.dumps({"error": "command 不能为空"}, ensure_ascii=False)
         try:
