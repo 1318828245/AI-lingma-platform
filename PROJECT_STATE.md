@@ -1,5 +1,5 @@
 # PROJECT_STATE
-更新于：2026-08-15 06:10（每轮结束必须更新）
+更新于：2026-08-15 06:40（每轮结束必须更新）
 
 ## 当前里程碑
 - 里程碑：M1（骨架与核心生成回路）
@@ -101,6 +101,10 @@
 - [x] 修复工具“失败”误报：read_file 返回纯文本被成功判定当 JSON 解析导致全标失败；
       改为返回结构化 JSON，非 JSON 结果视为成功；白名单补充 npx；
       真实冒烟 6 次工具调用全部 ok=True
+- [x] run_command 可用性：内置模拟 ls/cat/pwd/dir/type/echo/find/grep/where/cd
+      （纯 Python，不依赖外部二进制，Windows 同样可用）；npm/npx/node/python 走真实
+      子进程（.cmd 自动经 cmd.exe 包装）；工具描述明确支持范围；
+      pytest 42 passed（新增沙箱 4 例）
 
 ## 进行中 / 下一步
 - [ ] 下一步：M2 预览点选修改（ElementPicker、修改工作流、版本快照/回滚、diff 面板）
@@ -135,6 +139,8 @@
   与实时 SSE 同源映射，前端历史与实时渲染共用一套条目模型
 - 对话条目模型：思考=think（可折叠），连续工具调用=tools 组气泡，其余 stage/file/
   build/error/info 各自成条
+- 沙箱 run_command：白名单 npm/npx/node/python/python3；只读检查命令由 Python 内置
+  模拟（ls/cat/pwd/dir/type/echo/find/grep/where/cd），输出有长度与条数上限
 - 管理员设置（注册开关/配额）暂为内存态，重启恢复 env 默认值；M5 做持久化
 - 登录为无状态 JWT，logout 仅前端丢弃令牌；黑名单在 M5 补齐
 - 项目删除先停任务（当前无任务）再清理库记录与工作区目录

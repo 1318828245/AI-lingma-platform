@@ -87,7 +87,8 @@ TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "run_command",
-            "description": "在项目目录执行白名单命令，如 npm install / npm run build / node --check",
+            "description": "在项目目录执行白名单命令：npm/npx/node/python/python3（构建）、"
+            "ls/cat/pwd/find/grep/where/dir/type/echo（只读检查）",
             "parameters": {
                 "type": "object",
                 "properties": {
