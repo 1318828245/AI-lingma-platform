@@ -52,6 +52,7 @@ def save_generation_event(session_id: int, event: dict) -> None:
             {
                 "tool": str(event.get("tool", "")),
                 "ok": event.get("ok", True),
+                "error": str(event.get("error") or ""),
             },
         )
     elif etype == "file_written":

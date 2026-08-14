@@ -317,6 +317,11 @@ async def run_generation_agent(
                 }
 
             try:
+                error_hint = ""
+                if name == "run_command" and isinstance(args.get("command"), str):
+                    import shlex
+
+                    args["command"] = shlex.split(args["command"])
                 safe_args = _safe_tool_args(name, args)
                 await _emit(
                     state,
@@ -330,6 +335,7 @@ async def run_generation_agent(
             except GenerationBlocked as exc:
                 result = json.dumps({"error": str(exc)}, ensure_ascii=False)
                 ok = False
+                error_hint = str(exc)
             except GenerationCancelled:
                 raise
             except Exception as exc:
@@ -337,8 +343,19 @@ async def run_generation_agent(
                     {"error": f"{type(exc).__name__}: {exc}"}, ensure_ascii=False
                 )
                 ok = False
+                error_hint = str(exc)
             else:
                 ok = _is_ok(result)
+                if not ok:
+                    try:
+                        data = json.loads(result)
+                        if isinstance(data, dict):
+                            error_hint = str(data.get("error") or "")
+                            output = str(data.get("output") or "")
+                            if data.get("exit_code") not in (None, 0) and output:
+                                error_hint = (error_hint + " " + output[-200:]).strip()
+                    except json.JSONDecodeError:
+                        error_hint = result[:200]
             await _emit(
                 state,
                 {
@@ -346,6 +363,7 @@ async def run_generation_agent(
                     "tool": name,
                     "ok": ok,
                     "detail": _tool_result_detail(name, args),
+                    "error": error_hint[:300],
                 },
             )
             messages.append(

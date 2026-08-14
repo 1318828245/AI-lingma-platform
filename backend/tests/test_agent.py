@@ -234,3 +234,78 @@ def test_agent_max_iterations(client, admin_headers, monkeypatch):
     with pytest.raises(Exception) as exc:
         asyncio.run(run_generation_agent(state, max_iterations=2))
     assert "2 轮" in str(exc.value)
+
+
+def test_agent_run_command_string_normalized(client, admin_headers, monkeypatch):
+    project = client.post(
+        "/api/projects",
+        headers=admin_headers,
+        json={"name": "Agent命令单测", "template": "blank", "tech_stack": "html"},
+    ).json()
+    me = client.get("/api/users/me", headers=admin_headers).json()
+    sessions = client.get(
+        "/api/sessions", headers=admin_headers, params={"project_id": project["id"]}
+    ).json()
+    state = _make_state(project["id"], me["id"], sessions[0]["id"])
+
+    calls = [
+        {
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_cmd",
+                    "type": "function",
+                    "function": {
+                        "name": "run_command",
+                        "arguments": json.dumps(
+                            {"command": "node -e console.log(1)"}
+                        ),
+                    },
+                }
+            ],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+        },
+        {
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_done",
+                    "type": "function",
+                    "function": {
+                        "name": "finish",
+                        "arguments": json.dumps({"summary": "完成"}),
+                    },
+                }
+            ],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+        },
+    ]
+
+    async def fake_complete(
+        self, messages, tools, on_reasoning=None, on_content=None, temperature=0.2
+    ):
+        return calls.pop(0)
+
+    monkeypatch.setattr(LLMClient, "stream_complete_with_tools", fake_complete)
+
+    async def scenario():
+        broker = get_broker()
+        queue = await broker.subscribe(state["generation_id"])
+        try:
+            await run_generation_agent(state)
+        finally:
+            await broker.unsubscribe(state["generation_id"], queue)
+        events = []
+        while not queue.empty():
+            events.append(queue.get_nowait())
+        return events
+
+    events = asyncio.run(scenario())
+    completed = [
+        e
+        for e in events
+        if e.get("type") == "tool_call_completed" and e.get("tool") == "run_command"
+    ]
+    assert completed
+    assert completed[0]["ok"] is True
+    assert completed[0]["detail"] == "node -e console.log(1)"

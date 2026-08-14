@@ -40,9 +40,18 @@ marked.use(
 marked.setOptions({ gfm: true, breaks: true });
 
 const props = defineProps<{ content: string }>();
-const html = computed(() =>
-  DOMPurify.sanitize(marked.parse(props.content) as string)
-);
+const html = computed(() => {
+  try {
+    return DOMPurify.sanitize(marked.parse(props.content) as string);
+  } catch {
+    // 渲染失败时降级为纯文本，保证内容可见
+    return props.content
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\n/g, "<br>");
+  }
+});
 </script>
 
 <style scoped>

@@ -85,8 +85,8 @@
                 :class="{ open: !entry.collapsed, streaming: entry.streaming }"
                 role="button"
                 tabindex="0"
-                @click="entry.collapsed = !entry.collapsed"
-                @keydown.enter="entry.collapsed = !entry.collapsed"
+                @click="toggleCollapsed(entry, $event)"
+                @keydown.enter="toggleCollapsed(entry, $event)"
               >
                 <span class="entry-icon think">
                   <span v-if="entry.streaming" class="spinner-ring amber" />
@@ -128,7 +128,11 @@
                     <span v-else-if="item.detail" class="entry-detail mono">
                       {{ item.detail }}
                     </span>
-                    <span v-if="item.ok === false" class="entry-hint fail-hint">
+                    <span
+                      v-if="item.ok === false"
+                      class="entry-hint fail-hint"
+                      :title="item.error || '工具执行失败'"
+                    >
                       失败
                     </span>
                   </div>
@@ -148,8 +152,8 @@
                 :class="{ open: !entry.collapsed }"
                 role="button"
                 tabindex="0"
-                @click="entry.collapsed = !entry.collapsed"
-                @keydown.enter="entry.collapsed = !entry.collapsed"
+                @click="toggleCollapsed(entry, $event)"
+                @keydown.enter="toggleCollapsed(entry, $event)"
               >
                 <span class="entry-icon"><ToolIcon name="terminal" /></span>
                 <span class="entry-title">构建日志</span>
@@ -272,6 +276,7 @@ interface ChatEntry {
     detail: string;
     pending: boolean;
     ok?: boolean;
+    error?: string;
   }>;
 }
 
@@ -320,6 +325,14 @@ function bumpStream() {
 
 function lastEntry() {
   return entries.value[entries.value.length - 1];
+}
+
+function toggleCollapsed(entry: ChatEntry, event: Event) {
+  entry.collapsed = !entry.collapsed;
+  if (!entry.collapsed) {
+    const el = event.currentTarget as HTMLElement | null;
+    nextTick(() => el?.scrollIntoView({ block: "nearest" }));
+  }
 }
 
 function queueDelta(kind: "think" | "assistant", text: string) {
@@ -477,6 +490,7 @@ function historyToEntries(history: Message[]): ChatEntry[] {
         tool?: string;
         ok?: boolean;
         detail?: string;
+        error?: string;
       };
       if (currentTools?.kind !== "tools") {
         currentTools = {
@@ -492,6 +506,7 @@ function historyToEntries(history: Message[]): ChatEntry[] {
         detail: m.content || tj.detail || "",
         pending: false,
         ok: tj.ok !== false,
+        error: tj.error || undefined,
       });
       continue;
     }
@@ -629,6 +644,7 @@ function watchGeneration(genId: number) {
         item.pending = false;
         item.ok = event.ok !== false;
         if (!item.detail && event.detail) item.detail = String(event.detail);
+        item.error = event.error ? String(event.error) : undefined;
         break;
       }
     }
