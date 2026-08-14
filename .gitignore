@@ -206,6 +206,14 @@ tempCodeRunnerFile.py
 # Ruff stuff:
 .ruff_cache/
 
+# IDE
+.idea/
+
+# App runtime data (workspaces / versions / publish / sqlite)
+storage/
+*.db
+*.db-journal
+
 # PyPI configuration file
 .pypirc
 
