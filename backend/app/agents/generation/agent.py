@@ -158,7 +158,11 @@ async def _execute_tool(state: GenerationState, name: str, args: dict) -> str:
         return json.dumps(list_files(workspace), ensure_ascii=False)
     if name == "read_file":
         try:
-            return read_file(workspace, args["path"])
+            content = read_file(workspace, args["path"])
+            return json.dumps(
+                {"ok": True, "content": content[:6000]},
+                ensure_ascii=False,
+            )
         except Exception as exc:
             return json.dumps({"error": f"{type(exc).__name__}: {exc}"}, ensure_ascii=False)
     if name == "write_file":
@@ -379,7 +383,8 @@ def _is_ok(result: str) -> bool:
     try:
         data = json.loads(result)
     except json.JSONDecodeError:
-        return False
+        # 非 JSON 的纯文本结果视为成功（兼容旧工具返回）
+        return True
     if isinstance(data, dict):
         if data.get("error"):
             return False

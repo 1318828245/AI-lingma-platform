@@ -11,7 +11,13 @@ from pathlib import Path
 from app.core.config import get_settings
 from app.agents.tools import list_files
 
-ALLOWED_COMMANDS = {"npm": True, "node": True, "python": True, "python3": True}
+ALLOWED_COMMANDS = {
+    "npm": True,
+    "npx": True,
+    "node": True,
+    "python": True,
+    "python3": True,
+}
 
 
 class BuildError(Exception):

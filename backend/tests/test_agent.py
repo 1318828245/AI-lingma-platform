@@ -81,6 +81,20 @@ def test_agent_loop_writes_files_and_finishes(
                     "id": "call_2",
                     "type": "function",
                     "function": {
+                        "name": "read_file",
+                        "arguments": json.dumps({"path": "index.html"}),
+                    },
+                }
+            ],
+            "usage": {"prompt_tokens": 5, "completion_tokens": 2},
+        },
+        {
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_3",
+                    "type": "function",
+                    "function": {
                         "name": "finish",
                         "arguments": json.dumps({"summary": "页面已生成"}),
                     },
@@ -118,7 +132,7 @@ def test_agent_loop_writes_files_and_finishes(
     assert "你好，灵码" in (ws / "index.html").read_text(encoding="utf-8")
     assert result["summary"] == "页面已生成"
     assert "index.html" in result["files"]
-    assert result["token_usage"] == {"prompt_tokens": 15, "completion_tokens": 8}
+    assert result["token_usage"] == {"prompt_tokens": 20, "completion_tokens": 10}
     types = {e["type"] for e in events}
     assert "reasoning_delta" in types
     assert "stream_end" in types
@@ -126,6 +140,12 @@ def test_agent_loop_writes_files_and_finishes(
     assert "tool_call_completed" in types
     assert "file_written" in types
     assert any(e.get("type") == "reasoning_delta" and e.get("text") for e in events)
+    read_events = [
+        e
+        for e in events
+        if e.get("type") == "tool_call_completed" and e.get("tool") == "read_file"
+    ]
+    assert read_events and read_events[0]["ok"] is True
 
     from app.core.database import SessionLocal
     from app.models.message import Message

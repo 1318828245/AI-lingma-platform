@@ -50,6 +50,12 @@ def main() -> None:
                 reasoning_chars += len(event.get("text") or "")
         print("event_counts:", counts, flush=True)
         print("reasoning_chars:", reasoning_chars, flush=True)
+        tool_results = [
+            (e.get("tool"), e.get("ok"))
+            for e in events
+            if e["type"] == "tool_call_completed"
+        ]
+        print("tool_results:", tool_results, flush=True)
 
         deadline = time.time() + 30
         current = None
