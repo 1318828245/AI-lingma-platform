@@ -235,19 +235,34 @@ class LLMClient:
 
     async def create_plan(self, parsed: dict, tech_stack: str) -> list[dict]:
         if self.mode == "mock":
-            return [
-                {"step": "解析需求", "detail": parsed.get("goal", "")},
-                {"step": "基于模板改造", "detail": f"tech_stack={tech_stack}"},
-                {"step": "生成/补充页面代码", "detail": "写入与修改工程文件"},
-                {"step": "构建校验与修复", "detail": "运行构建并修复问题"},
-                {"step": "交付总结", "detail": "生成会话总结"},
+            goal = str(parsed.get("goal", ""))
+            features = [str(f) for f in parsed.get("features", [])][:4]
+            steps = [
+                {"step": "解析需求", "detail": goal},
+                {"step": "搭建页面骨架", "detail": f"按需求创建/调整页面结构（{tech_stack}）"},
             ]
+            for feature in features:
+                steps.append(
+                    {"step": f"实现功能：{feature}", "detail": f"为「{feature}」编写交互与样式"}
+                )
+            steps.append({"step": "构建校验", "detail": "运行构建并修复发现的问题"})
+            steps.append({"step": "交付总结", "detail": "生成会话总结"})
+            return steps
         from app.agents.generation.prompts import PROMPT_CREATE_PLAN
 
         content = await self._real_complete(
             [
                 {"role": "system", "content": PROMPT_CREATE_PLAN},
-                {"role": "user", "content": json.dumps(parsed, ensure_ascii=False)},
+                {
+                    "role": "user",
+                    "content": json.dumps(
+                        {
+                            "tech_stack": tech_stack,
+                            "parsed_requirement": parsed,
+                        },
+                        ensure_ascii=False,
+                    ),
+                },
             ],
             json_mode=True,
         )

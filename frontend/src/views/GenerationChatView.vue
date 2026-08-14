@@ -104,23 +104,31 @@
                 </p>
               </div>
 
-              <!-- 工具调用 -->
-              <div
-                v-else-if="entry.kind === 'tool'"
-                class="entry tool-entry"
-                :class="{ pending: entry.pending, fail: entry.ok === false }"
-              >
-                <span class="entry-icon">
-                  <span v-if="entry.pending" class="spinner-ring" />
-                  <ToolIcon
-                    v-else
-                    :name="entry.ok === false ? 'alert' : toolIcon(entry.tool)"
-                  />
-                </span>
-                <span class="mono tool-name">{{ toolLabel(entry.tool) }}</span>
-                <span v-if="entry.pending" class="entry-hint">调用中…</span>
-                <span v-if="entry.detail" class="entry-detail mono">{{ entry.detail }}</span>
-                <span v-if="entry.ok === false" class="entry-hint fail-hint">失败</span>
+              <!-- 工具调用组（连续调用合并为一个气泡，与思考平级） -->
+              <div v-else-if="entry.kind === 'tools'" class="entry tools-entry">
+                <span class="entry-icon"><ToolIcon name="tool" /></span>
+                <div class="tools-body">
+                  <div
+                    v-for="(item, idx) in entry.items"
+                    :key="idx"
+                    class="tool-item"
+                    :class="{ pending: item.pending, fail: item.ok === false }"
+                  >
+                    <span v-if="item.pending" class="spinner-ring" />
+                    <ToolIcon
+                      v-else
+                      :name="item.ok === false ? 'alert' : toolIcon(item.tool)"
+                    />
+                    <span class="mono tool-name">{{ toolLabel(item.tool) }}</span>
+                    <span v-if="item.pending" class="entry-hint">调用中…</span>
+                    <span v-else-if="item.detail" class="entry-detail mono">
+                      {{ item.detail }}
+                    </span>
+                    <span v-if="item.ok === false" class="entry-hint fail-hint">
+                      失败
+                    </span>
+                  </div>
+                </div>
               </div>
 
               <!-- 写入文件 -->
@@ -240,7 +248,7 @@ interface ChatEntry {
     | "assistant"
     | "stage"
     | "think"
-    | "tool"
+    | "tools"
     | "file"
     | "build"
     | "error"
@@ -255,6 +263,12 @@ interface ChatEntry {
   streaming?: boolean;
   pending?: boolean;
   ok?: boolean;
+  items?: Array<{
+    tool: string;
+    detail: string;
+    pending: boolean;
+    ok?: boolean;
+  }>;
 }
 
 const route = useRoute();
@@ -369,6 +383,7 @@ function toolLabel(tool?: string) {
     read_file: "读取文件",
     list_files: "查看文件",
     finish: "完成",
+    file: "写入文件",
   };
   return map[tool || ""] || tool || "工具";
 }
@@ -378,6 +393,7 @@ function toolIcon(tool?: string) {
   if (tool === "run_command") return "terminal";
   if (tool === "read_file" || tool === "list_files") return "folder";
   if (tool === "finish") return "flag";
+  if (tool === "file") return "check";
   return "info";
 }
 
@@ -392,16 +408,20 @@ onMounted(async () => {
 
 function historyToEntries(history: Message[]): ChatEntry[] {
   const list: ChatEntry[] = [];
+  let currentTools: ChatEntry | null = null;
   for (const m of history) {
     if (m.role === "user") {
+      currentTools = null;
       list.push({ id: ++seq, kind: "user", content: m.content, collapsed: false });
       continue;
     }
     if (m.msg_type === "summary") {
+      currentTools = null;
       list.push({ id: ++seq, kind: "assistant", content: m.content, collapsed: false });
       continue;
     }
     if (m.msg_type === "stage") {
+      currentTools = null;
       const info = stageInfo(m.content);
       list.push({
         id: ++seq,
@@ -413,6 +433,7 @@ function historyToEntries(history: Message[]): ChatEntry[] {
       continue;
     }
     if (m.msg_type === "think") {
+      currentTools = null;
       list.push({ id: ++seq, kind: "think", content: m.content, collapsed: false });
       continue;
     }
@@ -422,37 +443,54 @@ function historyToEntries(history: Message[]): ChatEntry[] {
         ok?: boolean;
         detail?: string;
       };
-      list.push({
-        id: ++seq,
-        kind: "tool",
+      if (currentTools?.kind !== "tools") {
+        currentTools = {
+          id: ++seq,
+          kind: "tools",
+          items: [],
+          collapsed: false,
+        };
+        list.push(currentTools);
+      }
+      currentTools.items?.push({
         tool: tj.tool || "",
         detail: m.content || tj.detail || "",
         pending: false,
         ok: tj.ok !== false,
-        collapsed: false,
       });
       continue;
     }
     if (m.msg_type === "file_written") {
-      const last = list[list.length - 1];
-      if (last?.kind === "tool" && last.detail === m.content) continue;
-      list.push({ id: ++seq, kind: "file", detail: m.content, collapsed: false });
+      if (currentTools?.kind === "tools") {
+        const items = currentTools.items || [];
+        const prevItem = items[items.length - 1];
+        if (prevItem && prevItem.tool !== "file" && prevItem.detail === m.content) {
+          continue;
+        }
+        items.push({ tool: "file", detail: m.content, pending: false, ok: true });
+      } else {
+        list.push({ id: ++seq, kind: "file", detail: m.content, collapsed: false });
+      }
       continue;
     }
     if (m.msg_type === "build_log") {
+      currentTools = null;
       const last = list[list.length - 1];
       if (last?.kind === "build") last.lines?.push(m.content);
       else list.push({ id: ++seq, kind: "build", lines: [m.content], collapsed: true });
       continue;
     }
     if (m.msg_type === "error") {
+      currentTools = null;
       list.push({ id: ++seq, kind: "error", content: m.content, collapsed: false });
       continue;
     }
     if (m.msg_type === "info") {
+      currentTools = null;
       list.push({ id: ++seq, kind: "info", content: m.content, collapsed: false });
       continue;
     }
+    currentTools = null;
     list.push({ id: ++seq, kind: "assistant", content: m.content, collapsed: false });
   }
   return list;
@@ -536,20 +574,28 @@ function watchGeneration(genId: number) {
     if (previous?.kind === "think" && previous.streaming) {
       previous.streaming = false;
     }
-    push({ kind: "tool", tool, detail, pending: true });
+    let group = lastEntry();
+    if (group?.kind !== "tools") {
+      group = push({ kind: "tools", items: [] });
+    }
+    group.items?.push({ tool, detail, pending: true });
     bumpStream();
   });
 
   eventSource.addEventListener("tool_call_completed", (e) => {
     const event = JSON.parse((e as MessageEvent).data) as SseEvent;
     const tool = String(event.tool || "");
-    const entry = [...entries.value]
-      .reverse()
-      .find((item) => item.kind === "tool" && item.tool === tool && item.pending);
-    if (entry) {
-      entry.pending = false;
-      entry.ok = event.ok !== false;
-      if (!entry.detail && event.detail) entry.detail = String(event.detail);
+    for (const entry of [...entries.value].reverse()) {
+      if (entry.kind !== "tools") continue;
+      const item = [...(entry.items || [])]
+        .reverse()
+        .find((i) => i.tool === tool && i.pending);
+      if (item) {
+        item.pending = false;
+        item.ok = event.ok !== false;
+        if (!item.detail && event.detail) item.detail = String(event.detail);
+        break;
+      }
     }
     bumpStream();
   });
@@ -562,17 +608,27 @@ function watchGeneration(genId: number) {
     let detail = "";
     if (typeof args.path === "string") detail = args.path;
     else if (Array.isArray(args.command)) detail = args.command.join(" ");
-    push({ kind: "tool", tool, detail, pending: false, ok: true });
+    let group = lastEntry();
+    if (group?.kind !== "tools") {
+      group = push({ kind: "tools", items: [] });
+    }
+    group.items?.push({ tool, detail, pending: false, ok: true });
     bumpStream();
   });
 
   eventSource.addEventListener("file_written", (e) => {
     const event = JSON.parse((e as MessageEvent).data) as SseEvent;
     const path = String(event.path || "");
-    const last = entries.value[entries.value.length - 1];
-    // 写入工具的 tool_call 已带同一 path，避免重复展示
-    if (last?.kind === "tool" && last.detail === path) return;
-    push({ kind: "file", detail: path });
+    const last = lastEntry();
+    if (last?.kind === "tools") {
+      const items = last.items || [];
+      const prevItem = items[items.length - 1];
+      // 写入工具的 tool_call 已带同一 path，避免重复展示
+      if (prevItem && prevItem.tool !== "file" && prevItem.detail === path) return;
+      items.push({ tool: "file", detail: path, pending: false, ok: true });
+    } else {
+      push({ kind: "file", detail: path });
+    }
   });
 
   eventSource.addEventListener("build_log", (e) => {
@@ -1009,11 +1065,31 @@ async function cancel() {
     transform: rotate(360deg);
   }
 }
-.tool-entry.pending {
+.tools-entry {
+  align-items: flex-start;
+}
+.tools-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.tool-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+  border: 1px solid var(--line);
+}
+.tool-item.pending {
   background: var(--amber-soft);
   border-color: rgba(242, 169, 59, 0.4);
 }
-.tool-entry.fail {
+.tool-item.fail {
   background: var(--red-soft);
   border-color: rgba(224, 91, 91, 0.35);
 }

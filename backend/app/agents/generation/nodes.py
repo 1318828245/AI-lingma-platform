@@ -126,8 +126,11 @@ async def create_plan(state: GenerationState) -> dict:
             gen.plan_json = plan
             db.commit()
     await publish_event(state, {"type": "stage", "stage": "plan"})
+    steps_text = "；".join(
+        f"{idx + 1}. {step.get('step', '')}" for idx, step in enumerate(plan[:8])
+    )
     await publish_event(
-        state, {"type": "thought", "content": f"实施计划完成，共 {len(plan)} 步"}
+        state, {"type": "thought", "content": f"实施计划：{steps_text}"}
     )
     return {"plan": plan, "status": "planned"}
 
