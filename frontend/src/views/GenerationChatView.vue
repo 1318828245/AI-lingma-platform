@@ -61,7 +61,11 @@
               <div v-else-if="entry.kind === 'assistant'" class="chat-msg">
                 <div class="bubble" :class="{ streaming: entry.streaming }">
                   <span class="who mono">灵码</span>
-                  <p>{{ entry.content }}</p>
+                  <MarkdownView
+                    v-if="!entry.streaming && entry.content"
+                    :content="entry.content"
+                  />
+                  <p v-else>{{ entry.content }}</p>
                 </div>
               </div>
 
@@ -95,7 +99,9 @@
                 <span class="chevron" aria-hidden="true">
                   {{ entry.collapsed ? "▸" : "▾" }}
                 </span>
-                <p v-if="!entry.collapsed" class="entry-body">{{ entry.content }}</p>
+                <p v-if="!entry.collapsed" class="entry-body think-body">
+                  {{ entry.content }}
+                </p>
               </div>
 
               <!-- 工具调用 -->
@@ -209,6 +215,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import LivePreviewPanel from "../components/LivePreviewPanel.vue";
+import MarkdownView from "../components/MarkdownView.vue";
 import StageRail from "../components/StageRail.vue";
 import ToolIcon from "../components/ToolIcon.vue";
 import { stageInfo } from "../constants/stages";
@@ -265,6 +272,9 @@ const streamTick = ref(0);
 const chatListRef = ref<HTMLElement | null>(null);
 let eventSource: EventSource | null = null;
 let seq = 0;
+let thinkBuffer = "";
+let assistantBuffer = "";
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
 function push(partial: Omit<ChatEntry, "id">) {
   const entry: ChatEntry = { id: ++seq, collapsed: true, ...partial };
@@ -274,9 +284,11 @@ function push(partial: Omit<ChatEntry, "id">) {
 
 async function scrollToBottom() {
   await nextTick();
-  if (chatListRef.value) {
-    chatListRef.value.scrollTop = chatListRef.value.scrollHeight;
-  }
+  const el = chatListRef.value;
+  if (!el) return;
+  // 用户向上翻阅时不强行拉回底部
+  if (el.scrollHeight - el.scrollTop - el.clientHeight > 140) return;
+  el.scrollTop = el.scrollHeight;
 }
 
 watch(() => entries.value.length, scrollToBottom);
@@ -288,6 +300,48 @@ function bumpStream() {
 
 function lastEntry() {
   return entries.value[entries.value.length - 1];
+}
+
+function queueDelta(kind: "think" | "assistant", text: string) {
+  if (kind === "think") thinkBuffer += text;
+  else assistantBuffer += text;
+  if (flushTimer === null) {
+    flushTimer = setTimeout(flushBuffers, 40);
+  }
+}
+
+function flushBuffers() {
+  if (flushTimer !== null) {
+    clearTimeout(flushTimer);
+    flushTimer = null;
+  }
+  if (thinkBuffer) {
+    let entry = lastEntry();
+    if (entry?.kind !== "think" || !entry.streaming) {
+      entry = push({
+        kind: "think",
+        content: "",
+        streaming: true,
+        collapsed: false,
+      });
+    }
+    entry.content = (entry.content || "") + thinkBuffer;
+    thinkBuffer = "";
+  }
+  if (assistantBuffer) {
+    let entry = lastEntry();
+    if (entry?.kind !== "assistant" || !entry.streaming) {
+      entry = push({
+        kind: "assistant",
+        content: "",
+        streaming: true,
+        collapsed: false,
+      });
+    }
+    entry.content = (entry.content || "") + assistantBuffer;
+    assistantBuffer = "";
+  }
+  bumpStream();
 }
 
 const genStateLabel = computed(() => {
@@ -343,6 +397,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  if (flushTimer !== null) clearTimeout(flushTimer);
   eventSource?.close();
 });
 
@@ -398,38 +453,17 @@ function watchGeneration(genId: number) {
   eventSource.addEventListener("reasoning_delta", (e) => {
     const event = JSON.parse((e as MessageEvent).data) as SseEvent;
     const text = String(event.text || "");
-    if (!text) return;
-    let entry = lastEntry();
-    if (entry?.kind !== "think" || !entry.streaming) {
-      entry = push({
-        kind: "think",
-        content: "",
-        streaming: true,
-        collapsed: false,
-      });
-    }
-    entry.content = (entry.content || "") + text;
-    bumpStream();
+    if (text) queueDelta("think", text);
   });
 
   eventSource.addEventListener("assistant_delta", (e) => {
     const event = JSON.parse((e as MessageEvent).data) as SseEvent;
     const text = String(event.text || "");
-    if (!text) return;
-    let entry = lastEntry();
-    if (entry?.kind !== "assistant" || !entry.streaming) {
-      entry = push({
-        kind: "assistant",
-        content: "",
-        streaming: true,
-        collapsed: false,
-      });
-    }
-    entry.content = (entry.content || "") + text;
-    bumpStream();
+    if (text) queueDelta("assistant", text);
   });
 
   eventSource.addEventListener("tool_call_started", (e) => {
+    flushBuffers();
     const event = JSON.parse((e as MessageEvent).data) as SseEvent;
     const tool = String(event.tool || "");
     const args = (event.args || {}) as Record<string, unknown>;
@@ -490,6 +524,7 @@ function watchGeneration(genId: number) {
   });
 
   eventSource.addEventListener("completed", (e) => {
+    flushBuffers();
     const event = JSON.parse((e as MessageEvent).data) as SseEvent;
     const summary = String(event.summary || "");
     const previous = lastEntry();
@@ -506,6 +541,7 @@ function watchGeneration(genId: number) {
   });
 
   eventSource.addEventListener("error", (e) => {
+    flushBuffers();
     const event = JSON.parse((e as MessageEvent).data) as SseEvent;
     push({ kind: "error", content: String(event.error || "任务失败了") });
     progressStage.value = "done";
@@ -514,6 +550,7 @@ function watchGeneration(genId: number) {
   });
 
   eventSource.addEventListener("cancelled", () => {
+    flushBuffers();
     push({ kind: "info", content: "已取消这次生成" });
     progressStage.value = "done";
     eventSource?.close();
@@ -834,6 +871,11 @@ async function cancel() {
   white-space: pre-wrap;
   word-break: break-word;
   color: var(--ink);
+}
+.think-body {
+  max-height: 240px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .build-lines {
   flex-basis: 100%;

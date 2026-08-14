@@ -1,5 +1,5 @@
 # PROJECT_STATE
-更新于：2026-08-15 03:40（每轮结束必须更新）
+更新于：2026-08-15 04:10（每轮结束必须更新）
 
 ## 当前里程碑
 - 里程碑：M1（骨架与核心生成回路）
@@ -78,6 +78,12 @@
 - [x] 修复事件总线 asyncio.Lock 跨事件循环挂起（改用线程锁，短操作安全）
 - [x] 真实冒烟：469 个 reasoning_delta（2005 字符思考）+ 93 个 assistant_delta +
       6 次工具 started/completed + 3 文件写入 → succeeded；pytest 38 passed
+- [x] 流式渲染性能优化：增量 40ms 合批刷新（不再逐 token 重渲染/滚动），
+      自动滚动只在用户接近底部时执行，避免强拉；组件卸载清理定时器
+- [x] Markdown 渲染：AI 总结支持 GFM（标题/列表/引用/表格）+ 代码高亮
+      （marked + marked-highlight + highlight.js + DOMPurify 消毒），代码块深色等宽
+      且最大高度 340px 内部滚动
+- [x] 思考内容 max-height 240px 内部滚动（overscroll contain），不再无限挤压页面
 
 ## 进行中 / 下一步
 - [ ] 下一步：M2 预览点选修改（ElementPicker、修改工作流、版本快照/回滚、diff 面板）
@@ -106,6 +112,8 @@
   仅限本地/内网开发，M4/M6 部署隔离时升级为 HttpOnly + 严格 CSP
 - SSE 事件扩展：reasoning_delta / assistant_delta / tool_call_started /
   tool_call_completed（原有事件保留兼容）
+- 前端渲染：marked/highlight.js/dompurify 本地打包；流式期间显示纯文本+光标，
+  结束后切 Markdown 渲染，避免逐字重排
 - 管理员设置（注册开关/配额）暂为内存态，重启恢复 env 默认值；M5 做持久化
 - 登录为无状态 JWT，logout 仅前端丢弃令牌；黑名单在 M5 补齐
 - 项目删除先停任务（当前无任务）再清理库记录与工作区目录
