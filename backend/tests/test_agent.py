@@ -121,6 +121,7 @@ def test_agent_loop_writes_files_and_finishes(
     assert result["token_usage"] == {"prompt_tokens": 15, "completion_tokens": 8}
     types = {e["type"] for e in events}
     assert "reasoning_delta" in types
+    assert "stream_end" in types
     assert "tool_call_started" in types
     assert "tool_call_completed" in types
     assert "file_written" in types

@@ -226,6 +226,8 @@ async def run_generation_agent(
         reasoning = (message.get("reasoning_content") or "").strip()
         if reasoning:
             save_message(state["session_id"], "think", reasoning)
+        # 通知前端本段流式输出已结束（停止“思考中”/转圈并切换 Markdown）
+        await _emit(state, {"type": "stream_end"})
         usage = message.get("usage") or {}
         token_usage["prompt_tokens"] += int(usage.get("prompt_tokens") or 0)
         token_usage["completion_tokens"] += int(usage.get("completion_tokens") or 0)

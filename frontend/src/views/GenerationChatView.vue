@@ -99,9 +99,13 @@
                 <span class="chevron" aria-hidden="true">
                   {{ entry.collapsed ? "▸" : "▾" }}
                 </span>
-                <p v-if="!entry.collapsed" class="entry-body think-body">
-                  {{ entry.content }}
-                </p>
+                <div v-if="!entry.collapsed" class="entry-body think-body">
+                  <MarkdownView
+                    v-if="!entry.streaming"
+                    :content="entry.content || ''"
+                  />
+                  <p v-else>{{ entry.content }}</p>
+                </div>
               </div>
 
               <!-- 工具调用组（连续调用合并为一个气泡，与思考平级） -->
@@ -381,7 +385,7 @@ function toolLabel(tool?: string) {
     edit_file: "修改文件",
     run_command: "运行命令",
     read_file: "读取文件",
-    list_files: "查看文件",
+    list_files: "读取目录",
     finish: "完成",
     file: "写入文件",
   };
@@ -560,6 +564,17 @@ function watchGeneration(genId: number) {
     const event = JSON.parse((e as MessageEvent).data) as SseEvent;
     const text = String(event.text || "");
     if (text) queueDelta("assistant", text);
+  });
+
+  eventSource.addEventListener("stream_end", () => {
+    const last = lastEntry();
+    if (
+      last?.streaming &&
+      (last.kind === "think" || last.kind === "assistant")
+    ) {
+      last.streaming = false;
+    }
+    bumpStream();
   });
 
   eventSource.addEventListener("tool_call_started", (e) => {
