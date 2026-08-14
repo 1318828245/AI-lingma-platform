@@ -403,7 +403,23 @@ function endStreaming() {
     }
     activeAssistantId = null;
   }
+  clearAllStreaming();
   bumpStream();
+}
+
+function clearAllStreaming() {
+  // 双保险：扫描清掉任何残留的流式标记，确保思考/正文切换为 Markdown 渲染
+  for (const entry of entries.value) {
+    if (
+      (entry.kind === "think" || entry.kind === "assistant") &&
+      entry.streaming
+    ) {
+      entry.streaming = false;
+      if (entry.kind === "think") entry.collapsed = true;
+    }
+  }
+  activeThinkId = null;
+  activeAssistantId = null;
 }
 
 const genStateLabel = computed(() => {
@@ -707,14 +723,7 @@ function watchGeneration(genId: number) {
     } else {
       push({ kind: "assistant", content: summary, collapsed: false });
     }
-    if (activeThinkId !== null) {
-      const thinkEntry = entries.value.find((entry) => entry.id === activeThinkId);
-      if (thinkEntry) {
-        thinkEntry.streaming = false;
-        thinkEntry.collapsed = true;
-      }
-      activeThinkId = null;
-    }
+    clearAllStreaming();
     progressStage.value = "done";
     eventSource?.close();
     previewRefresh.value += 1;
@@ -1057,6 +1066,12 @@ async function cancel() {
   max-height: 240px;
   overflow-y: auto;
   overscroll-behavior: contain;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--amber);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  margin-top: 6px;
 }
 .build-lines {
   flex-basis: 100%;

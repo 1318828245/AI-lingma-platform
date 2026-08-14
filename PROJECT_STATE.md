@@ -1,5 +1,5 @@
 # PROJECT_STATE
-更新于：2026-08-15 08:10（每轮结束必须更新）
+更新于：2026-08-15 08:40（每轮结束必须更新）
 
 ## 当前里程碑
 - 里程碑：M1（骨架与核心生成回路）
@@ -120,6 +120,10 @@
 - [x] 修复 run_command 展示逐字符间隔：模型以字符串传命令时先 shlex 拆分再生成
       detail（显示/执行一致）；失败时把错误信息（error/退出输出尾部）随事件与历史落库，
       前端“失败”徽标带 title 显示原因；pytest 45 passed
+- [x] 思考 Markdown 展示加固：任何结束事件（stream_end/完成/错误/取消）统一扫描清除
+      残留 streaming 标记，确保思考切换到 MarkdownView（含代码高亮/列表/加粗）；
+      思考内容区改为“文档卡片”样式（琥珀左边线+内边距），Markdown 排版一眼可辨；
+      验证 marked+marked-highlight 代码围栏输出 <pre><code class="hljs">
 
 ## 进行中 / 下一步
 - [ ] 下一步：M2 预览点选修改（ElementPicker、修改工作流、版本快照/回滚、diff 面板）
