@@ -5,7 +5,7 @@
 
 ## 当前进度（M1 骨架阶段）
 
-已实现：后端骨架（FastAPI + SQLAlchemy 2.x）、全部数据模型、JWT 认证（bcrypt）、内置管理员、3 个种子模板、项目/会话/模板/管理员基础 API、**生成工作流（解析→规划→生成→构建→修复）+ SSE 进度流 + 任务取消/超时/恢复**。
+已实现：后端骨架（FastAPI + SQLAlchemy 2.x）、全部数据模型、JWT 认证（bcrypt）、内置管理员、3 个种子模板、项目/会话/模板/管理员基础 API、**生成工作流（LangGraph：解析→规划→生成→构建→修复）+ SSE 进度流 + 任务取消/超时/恢复**。
 
 ## 快速体验生成流程
 
@@ -44,11 +44,12 @@ LLM 默认使用内置 mock 执行器（无需 Key），配置 `AI_LINGMA_LLM_BA
 
 ```powershell
 cd backend
-python -m venv .venv
-.\.venv\Scripts\python -m pip install -r requirements.txt
-.\.venv\Scripts\python -m app.scripts.init   # 初始化数据库/管理员/种子模板
-.\.venv\Scripts\python -m uvicorn app.main:app --reload --port 8000
+python -m pip install -r requirements.txt   # 使用 conda 环境 env01-p10-drawimg
+python -m app.scripts.init                  # 初始化数据库/管理员/种子模板
+python -m uvicorn app.main:app --reload --port 8000
 ```
+
+运行环境：conda `env01-p10-drawimg`（Python 3.10，已预装 langgraph 1.2.x）。
 
 默认管理员：`admin / admin123`（首次登录后请修改；生产环境通过 `.env` 的
 `AI_LINGMA_ADMIN_USERNAME` / `AI_LINGMA_ADMIN_PASSWORD` 指定）。
@@ -59,7 +60,7 @@ python -m venv .venv
 
 ```powershell
 cd backend
-.\.venv\Scripts\python -m pytest -q
+python -m pytest -q
 ```
 
 ## 安全边界

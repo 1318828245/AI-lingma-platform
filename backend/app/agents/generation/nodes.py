@@ -477,7 +477,13 @@ async def validate_build(state: GenerationState) -> dict:
                 "content": f"构建失败（第 {attempt} 次），进入修复：{errors[0][:120]}",
             },
         )
-        return {"build_attempt": attempt, "status": "repair", "errors": errors}
+        return {
+            "build_attempt": attempt,
+            "status": "repair",
+            "errors": errors,
+            "build_log": state["build_log"],
+            "repair_mode": True,
+        }
     raise GenerationFailed(f"构建失败且达到最大尝试次数：{errors[0] if errors else '未知错误'}")
 
 
