@@ -21,35 +21,39 @@
         </div>
       </div>
 
-      <div class="qc-field">
-        <span class="mono qc-label">项目名称</span>
-        <div class="qc-input-wrap">
-          <input
-            v-model="quickName"
-            placeholder="例如：我的名片"
-            @keyup.enter="quickCreate"
-          />
+      <div class="qc-form">
+        <div class="qc-field qc-name">
+          <span class="mono qc-label">项目名称</span>
+          <div class="qc-input-wrap">
+            <input
+              v-model="quickName"
+              placeholder="例如：我的名片"
+              @keyup.enter="quickCreate"
+            />
+          </div>
         </div>
-      </div>
 
-      <div class="qc-field">
-        <span class="mono qc-label">技术栈</span>
-        <div class="seg">
-          <button
-            v-for="s in stacks"
-            :key="s.value"
-            class="seg-btn"
-            :class="{ on: quickStack === s.value }"
-            @click="quickStack = s.value"
-          >
-            {{ s.label }}
+        <div class="qc-field qc-stack">
+          <span class="mono qc-label">技术栈</span>
+          <div class="seg">
+            <button
+              v-for="s in stacks"
+              :key="s.value"
+              class="seg-btn"
+              :class="{ on: quickStack === s.value }"
+              @click="quickStack = s.value"
+            >
+              {{ s.label }}
+            </button>
+          </div>
+        </div>
+
+        <div class="qc-actions">
+          <button class="btn primary qc-submit" @click="quickCreate">
+            创建项目
           </button>
         </div>
       </div>
-
-      <button class="btn primary qc-submit" @click="quickCreate">
-        创建项目
-      </button>
 
       <div class="qc-templates">
         <p class="mono qc-label">提示词模板</p>
@@ -243,9 +247,13 @@ function logout() {
   background: var(--paper);
 }
 .quick-create {
-  max-width: 640px;
+  width: min(80%, 920px);
   margin: 0 auto 28px;
-  padding: 22px 24px 20px;
+  padding: 28px 32px 24px;
+  min-height: 320px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
   border-top: 3px solid var(--amber);
   box-shadow: var(--shadow-md);
 }
@@ -276,7 +284,21 @@ function logout() {
   display: flex;
   flex-direction: column;
   gap: 7px;
-  margin-bottom: 14px;
+}
+.qc-form {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+}
+.qc-name {
+  flex: 1;
+  min-width: 0;
+}
+.qc-stack {
+  flex-shrink: 0;
+}
+.qc-actions {
+  flex-shrink: 0;
 }
 .qc-label {
   font-size: 11px;
@@ -326,9 +348,9 @@ function logout() {
   font-weight: 600;
 }
 .qc-submit {
-  width: 100%;
   height: 44px;
   font-size: 14px;
+  white-space: nowrap;
 }
 .qc-templates {
   display: flex;
@@ -485,5 +507,15 @@ function logout() {
   font-family: var(--font-display);
   font-size: 18px;
   font-weight: 600;
+}
+
+@media (max-width: 720px) {
+  .qc-form {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .qc-submit {
+    width: 100%;
+  }
 }
 </style>
