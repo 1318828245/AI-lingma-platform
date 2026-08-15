@@ -118,6 +118,7 @@ def list_project_files(
 @router.get("/api/projects/{project_id}/screenshot")
 async def project_screenshot(
     project_id: int,
+    force: bool = Query(default=False),
     user: User = Depends(get_current_user_sse),
     db: Session = Depends(get_db),
 ):
@@ -131,6 +132,8 @@ async def project_screenshot(
         raise HTTPException(status_code=404, detail="项目尚未生成可预览内容")
 
     thumb = get_settings().storage_dir / "thumbnails" / f"{project_id}.png"
+    if force and thumb.exists():
+        thumb.unlink(missing_ok=True)
     index_mtime = index.stat().st_mtime
     if not thumb.exists() or thumb.stat().st_mtime < index_mtime:
         token = create_access_token(user.id)

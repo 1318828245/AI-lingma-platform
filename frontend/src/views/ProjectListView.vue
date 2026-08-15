@@ -158,11 +158,12 @@ const quickTemplates = [
 const thumbState = ref<Record<number, "loading" | "ok" | "error">>({});
 const thumbVersions = ref<Record<number, number>>({});
 const thumbRetried = ref<Record<number, boolean>>({});
+const thumbForced = ref<Record<number, boolean>>({});
 
 function thumbSrc(p: Project) {
   return `/api/projects/${p.id}/screenshot?token=${encodeURIComponent(
     auth.accessToken
-  )}&t=${thumbVersions.value[p.id] || 0}`;
+  )}&t=${thumbVersions.value[p.id] || 0}${thumbForced.value[p.id] ? "&force=1" : ""}`;
 }
 
 function thumbError(p: Project) {
@@ -170,6 +171,7 @@ function thumbError(p: Project) {
   // 自动重试一次（截图可能还在生成中或 Edge 首次启动较慢）
   if (!thumbRetried.value[p.id]) {
     thumbRetried.value[p.id] = true;
+    thumbForced.value[p.id] = true;
     setTimeout(() => {
       thumbVersions.value[p.id] = (thumbVersions.value[p.id] || 0) + 1;
       thumbState.value[p.id] = "loading";
@@ -178,6 +180,7 @@ function thumbError(p: Project) {
 }
 
 function retryThumb(p: Project) {
+  thumbForced.value[p.id] = true;
   thumbVersions.value[p.id] = (thumbVersions.value[p.id] || 0) + 1;
   thumbState.value[p.id] = "loading";
 }
