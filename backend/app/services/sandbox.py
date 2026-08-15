@@ -1,11 +1,13 @@
-"""受限命令执行与构建校验。
+"""命令执行与构建校验。
 
-本地开发为受限子进程（白名单命令 + 超时 + 工作区约束）；Docker 沙箱在 M6 补齐。
+command_mode=shell：等同本机终端（走系统 Shell，支持 &&、管道、引号），本地开发默认；
+command_mode=sandbox：白名单受限子进程（生产/受限环境用），Docker 沙箱在 M6 补齐。
 """
 
 import asyncio
 import fnmatch
 import os
+import re
 import shlex
 import shutil
 from pathlib import Path
@@ -45,8 +47,18 @@ async def run_command(
     cwd: Path,
     timeout: int = 300,
 ) -> tuple[int, str]:
+    if get_settings().command_mode == "shell":
+        return await _run_shell_command(command, cwd, timeout)
     if isinstance(command, str):
         command = shlex.split(command)
+    return await _run_sandbox_command(command, cwd, timeout)
+
+
+async def _run_sandbox_command(
+    command: list[str],
+    cwd: Path,
+    timeout: int = 300,
+) -> tuple[int, str]:
     if not command:
         raise BuildError("空命令")
     if command[0] in EMULATED_COMMANDS:
@@ -85,6 +97,101 @@ async def run_command(
         except Exception:
             pass
         raise BuildError(f"命令超时（{timeout}s）: {' '.join(command)}")
+    text = output.decode("utf-8", errors="replace")
+    if "\ufffd" in text:
+        text = output.decode("gbk", errors="replace")
+    return proc.returncode or 0, text
+
+
+async def _run_shell_command(
+    command: str | list[str],
+    cwd: Path,
+    timeout: int = 300,
+) -> tuple[int, str]:
+    """轻量 Shell 语义：shlex 解析引号，支持 && / || / ; 顺序执行与 VAR=val 前缀；
+    命令不经 cmd.exe（避免 Windows 引号怪癖），暂不支持管道/重定向。"""
+    if isinstance(command, list):
+        cmdline = " ".join(command)
+    else:
+        cmdline = command
+    if not cmdline.strip():
+        raise BuildError("空命令")
+    tokens = shlex.split(cmdline)
+    if not tokens:
+        raise BuildError("空命令")
+    if any(op in tokens for op in ("|", ">", ">>", "<")):
+        raise BuildError("暂不支持管道/重定向语法，请拆分成多条命令执行")
+
+    segments: list[tuple[str, list[str]]] = []
+    current: list[str] = []
+    join_op = ";"
+    for token in tokens:
+        if token in ("&&", "||", ";"):
+            if current:
+                segments.append((join_op, current))
+                current = []
+            join_op = token
+        else:
+            current.append(token)
+    if current:
+        segments.append((join_op, current))
+
+    env = os.environ.copy()
+    code = 0
+    outputs: list[str] = []
+    for join_op, argv in segments:
+        if join_op == "&&" and code != 0:
+            break
+        if join_op == "||" and code == 0:
+            continue
+        seg_env = env
+        while argv and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", argv[0]):
+            key, value = argv.pop(0).split("=", 1)
+            seg_env = {**env, key: value}
+        if not argv:
+            continue
+        if argv[0] in EMULATED_COMMANDS:
+            code, output = _emulate_command(argv, cwd)
+        else:
+            code, output = await _run_direct(argv, cwd, timeout, seg_env)
+        outputs.append(output)
+    return code, "".join(outputs)
+
+
+async def _run_direct(
+    argv: list[str],
+    cwd: Path,
+    timeout: int,
+    env: dict[str, str],
+) -> tuple[int, str]:
+    """直接执行（不走 shell），支持 PATH 解析与 python3 回退。"""
+    exe = _resolve_exe(argv[0])
+    if exe is None:
+        raise BuildError(f"找不到可执行文件: {argv[0]}")
+    if argv[0] in ("python", "python3", "py"):
+        env["PYTHONIOENCODING"] = "utf-8"
+        env["PYTHONUTF8"] = "1"
+    if exe.lower().endswith((".cmd", ".bat")):
+        args = [os.environ.get("COMSPEC", "cmd.exe"), "/c", exe, *argv[1:]]
+    else:
+        args = [exe, *argv[1:]]
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *args,
+            cwd=str(cwd),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            env=env,
+        )
+        output, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except NotImplementedError:
+        raise BuildError("当前环境不支持执行子进程命令（NotImplementedError）")
+    except asyncio.TimeoutError:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+        raise BuildError(f"命令超时（{timeout}s）: {' '.join(argv)}")
     text = output.decode("utf-8", errors="replace")
     if "\ufffd" in text:
         text = output.decode("gbk", errors="replace")

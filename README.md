@@ -84,5 +84,8 @@ python -m pytest -q
 ## 安全边界
 
 - 默认 SQLite + 本地文件存储；生产切换 PostgreSQL 与 Docker 沙箱（见提示词 v3）。
+- **命令执行默认 shell 模式**（`AI_LINGMA_COMMAND_MODE=shell`）：AI 的工具命令等同本机
+  终端权限，支持 `&&`/`||`/`;` 与引号；仅限本地开发。生产环境务必改为
+  `sandbox`（白名单受限执行）并配合 Docker 沙箱。
 - 注册默认关闭（`AI_LINGMA_REGISTER_ENABLED=false`），仅管理员登录。
 - Docker 沙箱、完整护轨（LLM 复核）、部署引擎等里程碑尚未实现，暂不用于生产。

@@ -35,9 +35,26 @@ def test_run_command_emulated_ls_cat_pwd_grep(tmp_path):
     assert code == 0 and "hello.txt:1:" in out
 
 
-def test_run_command_whitelist_rejects():
+def test_sandbox_mode_whitelist_rejects():
+    from app.services.sandbox import _run_sandbox_command
+
     with pytest.raises(BuildError):
-        asyncio.run(run_command(["curl", "http://example.com"], Path("."), timeout=60))
+        asyncio.run(
+            _run_sandbox_command(["curl", "http://example.com"], Path("."), timeout=60)
+        )
+
+
+def test_shell_mode_supports_operators(tmp_path):
+    code, output = asyncio.run(
+        run_command(
+            "node -e \"console.log('a')\" && echo ok",
+            tmp_path,
+            timeout=60,
+        )
+    )
+    assert code == 0
+    assert "a" in output
+    assert "ok" in output
 
 
 def test_run_command_single_string_command(tmp_path):

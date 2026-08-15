@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     # 生成 Agent（ReAct 工具循环）
     agent_max_iterations: int = 50
 
+    # 命令执行模式：shell=本机终端语义（无沙箱，本地开发默认）；
+    # sandbox=白名单受限执行（生产/受限环境）
+    command_mode: str = "shell"
+
     # 首页项目截图（无头浏览器）
     backend_url: str = "http://127.0.0.1:8000"
     screenshot_timeout_seconds: int = 45

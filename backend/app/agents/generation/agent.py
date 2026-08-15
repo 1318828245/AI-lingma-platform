@@ -87,8 +87,8 @@ TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "run_command",
-            "description": "在项目目录执行白名单命令：npm/npx/node/python/python3（构建）、"
-            "ls/cat/pwd/find/grep/where/dir/type/echo（只读检查）",
+            "description": "在项目目录执行命令，等同本机终端（支持 &&、管道、引号等 Shell 语法）；"
+            "建议直接传完整命令字符串，例如 \"npm run build && node -e '...'\"",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -186,7 +186,7 @@ async def _execute_tool(state: GenerationState, name: str, args: dict) -> str:
         return json.dumps({"ok": True, "path": path}, ensure_ascii=False)
     if name == "run_command":
         command = args.get("command") or []
-        if isinstance(command, str):
+        if get_settings().command_mode != "shell" and isinstance(command, str):
             import shlex
 
             command = shlex.split(command)
