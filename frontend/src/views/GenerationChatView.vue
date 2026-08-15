@@ -484,6 +484,17 @@ onMounted(async () => {
     const history = (await listMessages(sessions[0].id)) as Message[];
     entries.value = historyToEntries(history);
   }
+  // 首页“生成项目”带提示词跳转：自动开始生成
+  const autoRequirement = route.query.requirement;
+  if (
+    route.query.auto === "1" &&
+    typeof autoRequirement === "string" &&
+    autoRequirement.trim()
+  ) {
+    router.replace({ query: {} });
+    requirement.value = autoRequirement;
+    await submitRequirement();
+  }
 });
 
 function historyToEntries(history: Message[]): ChatEntry[] {

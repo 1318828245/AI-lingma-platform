@@ -16,19 +16,19 @@
       <div class="qc-head">
         <span class="qc-icon" aria-hidden="true">✦</span>
         <div>
-          <p class="panel-title">快速创建项目</p>
-          <p class="qc-sub">输入名称并选择技术栈，回车即可创建并进入</p>
+          <p class="panel-title">快速生成项目</p>
+          <p class="qc-sub">输入提示词并选择技术栈，一键生成并进入</p>
         </div>
       </div>
 
       <div class="qc-form">
         <div class="qc-field qc-name">
-          <span class="mono qc-label">项目名称</span>
+          <span class="mono qc-label">生成提示词</span>
           <div class="qc-input-wrap">
             <textarea
-              v-model="quickName"
-              rows="2"
-              placeholder="例如：我的名片"
+              v-model="quickPrompt"
+              rows="4"
+              placeholder="例如：做一个深色风格的个人名片页，展示技能与作品"
               @keydown.enter.exact.prevent="quickCreate"
             />
           </div>
@@ -51,7 +51,7 @@
 
         <div class="qc-actions">
           <button class="btn primary qc-submit" @click="quickCreate">
-            创建项目
+            生成项目
           </button>
         </div>
       </div>
@@ -63,7 +63,7 @@
           :key="tpl"
           class="template"
           :title="`使用模板：${tpl}`"
-          @click="quickName = tpl"
+          @click="quickPrompt = tpl"
         >
           <span class="tpl-mark" aria-hidden="true">✦</span>
           <span class="tpl-text">{{ tpl }}</span>
@@ -136,7 +136,7 @@ import type { Project } from "../types";
 const router = useRouter();
 const auth = useAuthStore();
 const projects = ref<Project[]>([]);
-const quickName = ref("");
+const quickPrompt = ref("");
 const quickStack = ref<"html" | "vue3">("html");
 const stacks = [
   { value: "html", label: "HTML" },
@@ -164,12 +164,13 @@ onMounted(async () => {
 });
 
 async function quickCreate() {
-  const name = quickName.value.trim();
-  if (!name) {
-    ElMessage.warning("先给项目起个名字");
+  const prompt = quickPrompt.value.trim();
+  if (!prompt) {
+    ElMessage.warning("先输入你要生成的提示词");
     return;
   }
   try {
+    const name = prompt.split(/\n/)[0].trim().slice(0, 24) || "未命名项目";
     const project = await createProject({
       name,
       template: "blank",
@@ -177,8 +178,11 @@ async function quickCreate() {
     });
     ElMessage.success("项目创建成功");
     projects.value.unshift(project);
-    quickName.value = "";
-    router.push(`/projects/${project.id}`);
+    quickPrompt.value = "";
+    router.push({
+      path: `/projects/${project.id}`,
+      query: { requirement: prompt, auto: "1" },
+    });
   } catch (error: any) {
     ElMessage.error(error.response?.data?.detail || "创建失败");
   }
@@ -211,7 +215,8 @@ function logout() {
 
 <style scoped>
 .home-page {
-  max-width: 1080px;
+  max-width: 1440px;
+  padding: 28px 40px 40px;
 }
 .home-header {
   position: relative;
@@ -248,7 +253,7 @@ function logout() {
   background: var(--paper);
 }
 .quick-create {
-  width: min(95%, 1000px);
+  width: 100%;
   margin: 0 auto 28px;
   padding: 28px 32px 24px;
   min-height: 320px;
@@ -309,12 +314,12 @@ function logout() {
 }
 .qc-input-wrap textarea {
   width: 100%;
-  min-height: 68px;
+  min-height: 120px;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-md);
-  padding: 12px 14px;
-  font-size: 14px;
-  line-height: 1.5;
+  padding: 14px 16px;
+  font-size: 15px;
+  line-height: 1.6;
   background: var(--paper);
   color: var(--ink);
   outline: none;
@@ -398,7 +403,7 @@ function logout() {
 }
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 16px;
 }
 .project-card {
