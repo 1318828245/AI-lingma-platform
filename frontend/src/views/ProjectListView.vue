@@ -14,18 +14,37 @@
 
     <div v-if="projects.length" class="grid">
       <article v-for="p in projects" :key="p.id" class="panel project-card">
-        <div class="card-top">
-          <h3 class="wordmark card-name">{{ p.name }}</h3>
-          <span class="mono tech">{{ p.tech_stack }}</span>
+        <div class="thumb">
+          <img
+            v-if="thumbState[p.id] === 'ok'"
+            :src="thumbSrc(p)"
+            :alt="`${p.name} 截图`"
+            loading="lazy"
+            @error="thumbState[p.id] = 'error'"
+          />
+          <div v-else class="thumb-default">
+            <span class="thumb-icon" aria-hidden="true">▧</span>
+            <span class="thumb-text">
+              {{
+                thumbState[p.id] === "loading" ? "正在生成截图…" : "尚未生成"
+              }}
+            </span>
+          </div>
         </div>
-        <p class="card-desc">{{ p.description || "暂无描述" }}</p>
-        <p class="mono card-meta">
-          {{ p.template }} · {{ p.status }}
-        </p>
-        <div class="card-actions">
-          <button class="btn primary sm" @click="openGeneration(p)">生成对话</button>
-          <button class="btn ghost sm" @click="openPreview(p)">预览</button>
-          <button class="btn danger sm" @click="remove(p)">删除</button>
+        <div class="card-body">
+          <div class="card-top">
+            <h3 class="wordmark card-name">{{ p.name }}</h3>
+            <span class="mono tech">{{ p.tech_stack }}</span>
+          </div>
+          <p class="card-desc">{{ p.description || "暂无描述" }}</p>
+          <p class="mono card-meta">
+            {{ p.template }} · {{ p.status }}
+          </p>
+          <div class="card-actions">
+            <button class="btn primary sm" @click="openGeneration(p)">生成对话</button>
+            <button class="btn ghost sm" @click="openPreview(p)">预览</button>
+            <button class="btn danger sm" @click="remove(p)">删除</button>
+          </div>
         </div>
       </article>
     </div>
@@ -105,9 +124,20 @@ const form = reactive({
   template: "blank",
   tech_stack: "html",
 });
+const thumbState = ref<Record<number, "loading" | "ok" | "error">>({});
+const thumbNonce = ref(Date.now());
+
+function thumbSrc(p: Project) {
+  return `/api/projects/${p.id}/screenshot?token=${encodeURIComponent(
+    auth.accessToken
+  )}&t=${thumbNonce.value}`;
+}
 
 onMounted(async () => {
   projects.value = await listProjects();
+  projects.value.forEach((p) => {
+    thumbState.value[p.id] = "loading";
+  });
   templates.value = await listTemplates();
 });
 
@@ -194,13 +224,49 @@ function logout() {
   gap: 16px;
 }
 .project-card {
-  padding: 18px;
+  overflow: hidden;
   transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
 }
 .project-card:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
   border-color: var(--line-strong);
+}
+.thumb {
+  height: 150px;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(91, 103, 241, 0.06), transparent 45%),
+    var(--canvas-deep);
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top;
+  display: block;
+}
+.thumb-default {
+  text-align: center;
+  color: var(--faint);
+  padding: 16px;
+}
+.thumb-icon {
+  display: block;
+  font-size: 30px;
+  color: var(--primary);
+  opacity: 0.45;
+  margin-bottom: 6px;
+}
+.thumb-text {
+  font-size: 12px;
+}
+.card-body {
+  padding: 14px 18px 18px;
 }
 .card-top {
   display: flex;

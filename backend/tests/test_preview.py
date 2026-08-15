@@ -121,3 +121,51 @@ def test_sse_accepts_query_token(client, admin_headers):
 
                 events.append(json.loads(line[6:]))
     assert any(e["type"] == "completed" for e in events)
+
+
+def test_screenshot_requires_auth(client):
+    resp = client.get("/api/projects/1/screenshot")
+    assert resp.status_code == 401
+
+
+def test_screenshot_not_generated(client, admin_headers):
+    project = _create_project(
+        client, admin_headers, "截图未生成", template="任务看板", tech_stack="vue3"
+    )
+    resp = client.get(
+        f"/api/projects/{project['id']}/screenshot", headers=admin_headers
+    )
+    assert resp.status_code == 404
+
+
+def test_screenshot_generated_with_mock_capture(client, admin_headers, monkeypatch):
+    project = _create_project(
+        client, admin_headers, "截图成功", template="个人名片页", tech_stack="html"
+    )
+
+    async def fake_capture(url, output, timeout=None):
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"\x89PNG\r\n\x1a\nfakepng")
+        return True
+
+    monkeypatch.setattr("app.api.preview.capture_screenshot", fake_capture)
+    resp = client.get(
+        f"/api/projects/{project['id']}/screenshot", headers=admin_headers
+    )
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "image/png"
+
+
+def test_screenshot_fallback_when_capture_fails(client, admin_headers, monkeypatch):
+    project = _create_project(
+        client, admin_headers, "截图失败", template="个人名片页", tech_stack="html"
+    )
+
+    async def fake_capture(url, output, timeout=None):
+        return False
+
+    monkeypatch.setattr("app.api.preview.capture_screenshot", fake_capture)
+    resp = client.get(
+        f"/api/projects/{project['id']}/screenshot", headers=admin_headers
+    )
+    assert resp.status_code == 404

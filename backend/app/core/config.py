@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     # 生成 Agent（ReAct 工具循环）
     agent_max_iterations: int = 50
 
+    # 首页项目截图（无头浏览器）
+    backend_url: str = "http://127.0.0.1:8000"
+    screenshot_timeout_seconds: int = 45
+
     @property
     def database_url_default(self) -> str:
         return f"sqlite:///{(self.storage_dir / 'app.db').as_posix()}"

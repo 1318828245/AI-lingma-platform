@@ -6,10 +6,18 @@ from fastapi import APIRouter, Cookie, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
-from app.core.deps import get_current_user, get_db, get_user_from_token
+from app.core.config import get_settings
+from app.core.deps import (
+    get_current_user,
+    get_current_user_sse,
+    get_db,
+    get_user_from_token,
+)
+from app.core.security import create_access_token
 from app.models.file import File
 from app.models.project import Project
 from app.models.user import User
+from app.services.screenshot import capture_screenshot
 from app.services.project import get_owned_project, project_workspace
 
 router = APIRouter(tags=["preview"])
@@ -99,3 +107,32 @@ def list_project_files(
         {"path": row.path, "size": row.size, "content_hash": row.content_hash}
         for row in rows
     ]
+
+
+@router.get("/api/projects/{project_id}/screenshot")
+async def project_screenshot(
+    project_id: int,
+    user: User = Depends(get_current_user_sse),
+    db: Session = Depends(get_db),
+):
+    """首页项目截图：生成/失败则 404，前端回退默认图块。"""
+    get_owned_project(db, project_id, user.id)
+    root, mode = _preview_root(project_id)
+    if mode not in ("dist", "static"):
+        raise HTTPException(status_code=404, detail="项目尚未生成可预览内容")
+    index = root / "index.html"
+    if not index.exists():
+        raise HTTPException(status_code=404, detail="项目尚未生成可预览内容")
+
+    thumb = get_settings().storage_dir / "thumbnails" / f"{project_id}.png"
+    index_mtime = index.stat().st_mtime
+    if not thumb.exists() or thumb.stat().st_mtime < index_mtime:
+        token = create_access_token(user.id)
+        url = (
+            f"{get_settings().backend_url.rstrip('/')}"
+            f"/preview/{project_id}/?token={token}"
+        )
+        ok = await capture_screenshot(url, thumb)
+        if not ok:
+            raise HTTPException(status_code=404, detail="截图生成失败（环境不支持或无浏览器）")
+    return FileResponse(thumb, media_type="image/png")

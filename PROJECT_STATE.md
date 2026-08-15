@@ -1,5 +1,5 @@
 # PROJECT_STATE
-更新于：2026-08-15 09:10（每轮结束必须更新）
+更新于：2026-08-15 09:40（每轮结束必须更新）
 
 ## 当前里程碑
 - 里程碑：M1（骨架与核心生成回路）
@@ -130,6 +130,10 @@
       - node --check 校验命令降级为“跳过+告警”（工具结果 exit_code=0），不再全盘失败
       - 静态构建门禁中 node 语法检查不可用时仅警告、不阻断构建
       - pytest 46 passed（新增降级单测）
+- [x] 首页项目截图：后端用无头 Edge/Chrome 截取预览页并缓存 PNG
+      （storage/thumbnails/{project_id}.png，index.html 变更后自动重截）；
+      前端项目卡片显示真实网页截图，未生成/截图失败回退默认图块（“尚未生成”）；
+      实测 API 返回 200 image/png（43KB）；pytest 50 passed（新增截图 4 例）
 
 ## 进行中 / 下一步
 - [ ] 下一步：M2 预览点选修改（ElementPicker、修改工作流、版本快照/回滚、diff 面板）
@@ -170,6 +174,8 @@
   （跳过 WindowsApps stub）；python 子进程 PYTHONUTF8=1，输出 GBK/UTF-8 双解码
 - 受限环境降级：子进程 NotImplementedError → BuildError；node --check 跳过并告警，
   npm 等构建命令在环境不支持时仍明确失败（不伪造构建成功）
+- 截图：AI_LINGMA_BACKEND_URL 供无头浏览器回访预览页；截图失败/未生成返回 404，
+  前端 <img> 加载失败自动显示默认占位卡片
 - 管理员设置（注册开关/配额）暂为内存态，重启恢复 env 默认值；M5 做持久化
 - 登录为无状态 JWT，logout 仅前端丢弃令牌；黑名单在 M5 补齐
 - 项目删除先停任务（当前无任务）再清理库记录与工作区目录
