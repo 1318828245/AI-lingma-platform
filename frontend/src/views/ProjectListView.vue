@@ -16,13 +16,15 @@
       <article v-for="p in projects" :key="p.id" class="panel project-card">
         <div class="thumb">
           <img
-            v-if="thumbState[p.id] === 'ok'"
+            class="thumb-img"
+            :class="{ visible: thumbState[p.id] === 'ok' }"
             :src="thumbSrc(p)"
             :alt="`${p.name} 截图`"
             loading="lazy"
+            @load="thumbState[p.id] = 'ok'"
             @error="thumbState[p.id] = 'error'"
           />
-          <div v-else class="thumb-default">
+          <div v-if="thumbState[p.id] !== 'ok'" class="thumb-default">
             <span class="thumb-icon" aria-hidden="true">▧</span>
             <span class="thumb-text">
               {{
@@ -233,6 +235,7 @@ function logout() {
   border-color: var(--line-strong);
 }
 .thumb {
+  position: relative;
   height: 150px;
   background:
     radial-gradient(circle at 20% 20%, rgba(91, 103, 241, 0.06), transparent 45%),
@@ -243,17 +246,30 @@ function logout() {
   justify-content: center;
   overflow: hidden;
 }
-.thumb img {
+.thumb-img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   object-position: top;
   display: block;
+  opacity: 0;
+}
+.thumb-img.visible {
+  opacity: 1;
 }
 .thumb-default {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   text-align: center;
   color: var(--faint);
   padding: 16px;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(91, 103, 241, 0.06), transparent 45%),
+    var(--canvas-deep);
 }
 .thumb-icon {
   display: block;
