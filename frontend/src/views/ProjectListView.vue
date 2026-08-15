@@ -1,19 +1,54 @@
 <template>
-  <div class="page projects-page">
-    <header class="page-header">
-      <div class="brand-line">
+  <div class="page home-page">
+    <header class="home-header">
+      <div class="brand">
         <p class="eyebrow">AI · Lingma Studio</p>
-        <h1 class="wordmark page-title">项目</h1>
+        <h1 class="wordmark brand-name">AI 灵码平台</h1>
+        <p class="brand-slogan">说一句需求，看页面长出来</p>
       </div>
       <div class="head-actions">
         <span class="mono user-chip">{{ auth.user?.username }}</span>
-        <button class="btn primary" @click="openCreate">新建项目</button>
         <button class="btn ghost" @click="logout">退出</button>
       </div>
     </header>
 
+    <section class="panel quick-create">
+      <p class="panel-title">快速创建项目</p>
+      <div class="quick-row">
+        <input
+          v-model="quickName"
+          placeholder="输入项目名称，例如：我的名片"
+          @keyup.enter="quickCreate"
+        />
+        <select v-model="quickStack" title="技术栈">
+          <option value="html">HTML</option>
+          <option value="vue3">Vue 3</option>
+        </select>
+        <button class="btn primary" @click="quickCreate">创建项目</button>
+      </div>
+      <div class="templates">
+        <button
+          v-for="tpl in quickTemplates"
+          :key="tpl"
+          class="template"
+          :title="`使用模板：${tpl}`"
+          @click="quickName = tpl"
+        >
+          {{ tpl }}
+        </button>
+      </div>
+    </section>
+
     <div v-if="projects.length" class="grid">
-      <article v-for="p in projects" :key="p.id" class="panel project-card">
+      <article
+        v-for="p in projects"
+        :key="p.id"
+        class="panel project-card"
+        role="button"
+        tabindex="0"
+        @click="openGeneration(p)"
+        @keydown.enter="openGeneration(p)"
+      >
         <div class="thumb">
           <img
             class="thumb-img"
@@ -38,12 +73,11 @@
             <h3 class="wordmark card-name">{{ p.name }}</h3>
             <span class="mono tech">{{ p.tech_stack }}</span>
           </div>
-          <p class="card-desc">{{ p.description || "暂无描述" }}</p>
+          <p class="card-desc">{{ p.description || "点击卡片进入，开始生成" }}</p>
           <p class="mono card-meta">
             {{ p.template }} · {{ p.status }}
           </p>
-          <div class="card-actions">
-            <button class="btn primary sm" @click="openGeneration(p)">生成对话</button>
+          <div class="card-actions" @click.stop>
             <button class="btn ghost sm" @click="openPreview(p)">预览</button>
             <button class="btn danger sm" @click="remove(p)">删除</button>
           </div>
@@ -51,81 +85,31 @@
       </article>
     </div>
     <div v-else class="panel empty-state">
-      <p class="empty-mark">▧</p>
+      <p class="empty-mark" aria-hidden="true">▧</p>
       <p class="empty-title">还没有项目</p>
-      <p class="muted">新建一个项目，用一句话描述你想要的页面</p>
-      <button class="btn primary" @click="openCreate">新建项目</button>
-    </div>
-
-    <div v-if="dialogVisible" class="mask" @click.self="dialogVisible = false">
-      <form class="panel dialog" @submit.prevent="create">
-        <p class="panel-title">新建项目</p>
-        <label class="field">
-          <span class="mono label">项目名称</span>
-          <input v-model="form.name" placeholder="例如：我的个人名片" autofocus />
-        </label>
-        <label class="field">
-          <span class="mono label">起始模板</span>
-          <select v-model="form.template">
-            <option value="blank">空白项目</option>
-            <option
-              v-for="t in templates"
-              :key="t.id"
-              :value="t.name"
-            >
-              {{ t.name }}（{{ t.tech_stack }}）
-            </option>
-          </select>
-        </label>
-        <label class="field">
-          <span class="mono label">技术栈</span>
-          <select v-model="form.tech_stack">
-            <option value="html">纯 HTML/CSS/JS</option>
-            <option value="vue3">Vue 3 + Vite</option>
-          </select>
-        </label>
-        <label class="field">
-          <span class="mono label">描述（可选）</span>
-          <textarea v-model="form.description" rows="2" />
-        </label>
-        <div class="dialog-actions">
-          <button type="button" class="btn ghost" @click="dialogVisible = false">
-            取消
-          </button>
-          <button type="submit" class="btn primary" :disabled="creating">
-            {{ creating ? "创建中…" : "创建" }}
-          </button>
-        </div>
-      </form>
+      <p class="muted">在上方输入名称，或用下面的模板快速创建一个</p>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
-import {
-  createProject,
-  deleteProject,
-  listProjects,
-  listTemplates,
-} from "../api/projects";
+import { createProject, deleteProject, listProjects } from "../api/projects";
 import { useAuthStore } from "../stores/auth";
-import type { Project, Template } from "../types";
+import type { Project } from "../types";
 
 const router = useRouter();
 const auth = useAuthStore();
 const projects = ref<Project[]>([]);
-const templates = ref<Template[]>([]);
-const dialogVisible = ref(false);
-const creating = ref(false);
-const form = reactive({
-  name: "",
-  description: "",
-  template: "blank",
-  tech_stack: "html",
-});
+const quickName = ref("");
+const quickStack = ref<"html" | "vue3">("html");
+const quickTemplates = [
+  "做一个深色风格的个人名片页",
+  "做一个三列任务看板，支持增删移",
+  "做一个商品管理表格页，带搜索筛选",
+];
 const thumbState = ref<Record<number, "loading" | "ok" | "error">>({});
 const thumbNonce = ref(Date.now());
 
@@ -140,37 +124,26 @@ onMounted(async () => {
   projects.value.forEach((p) => {
     thumbState.value[p.id] = "loading";
   });
-  templates.value = await listTemplates();
 });
 
-function openCreate() {
-  form.name = "";
-  form.description = "";
-  form.template = "blank";
-  form.tech_stack = "html";
-  dialogVisible.value = true;
-}
-
-async function create() {
-  if (!form.name.trim()) {
+async function quickCreate() {
+  const name = quickName.value.trim();
+  if (!name) {
     ElMessage.warning("先给项目起个名字");
     return;
   }
-  creating.value = true;
   try {
     const project = await createProject({
-      name: form.name.trim(),
-      description: form.description,
-      template: form.template,
-      tech_stack: form.tech_stack,
+      name,
+      template: "blank",
+      tech_stack: quickStack.value,
     });
     ElMessage.success("项目创建成功");
-    dialogVisible.value = false;
     projects.value.unshift(project);
+    quickName.value = "";
+    router.push(`/projects/${project.id}`);
   } catch (error: any) {
     ElMessage.error(error.response?.data?.detail || "创建失败");
-  } finally {
-    creating.value = false;
   }
 }
 
@@ -200,14 +173,31 @@ function logout() {
 </script>
 
 <style scoped>
-.projects-page {
+.home-page {
   max-width: 1080px;
 }
-.brand-line .eyebrow {
+.home-header {
+  position: relative;
+  text-align: center;
+  margin-bottom: 24px;
+}
+.brand .eyebrow {
   color: var(--amber);
   margin-bottom: 4px;
 }
+.brand-name {
+  font-size: 38px;
+  letter-spacing: 0.04em;
+}
+.brand-slogan {
+  color: var(--muted);
+  font-size: 14px;
+  margin-top: 6px;
+}
 .head-actions {
+  position: absolute;
+  top: 0;
+  right: 0;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -220,6 +210,63 @@ function logout() {
   padding: 5px 12px;
   background: var(--paper);
 }
+.quick-create {
+  max-width: 640px;
+  margin: 0 auto 28px;
+  padding: 18px 20px;
+  border-top: 3px solid var(--amber);
+  box-shadow: var(--shadow-md);
+}
+.quick-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+.quick-row input {
+  flex: 1;
+  height: 40px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  padding: 0 12px;
+  font-size: 14px;
+  outline: none;
+  background: var(--paper);
+}
+.quick-row input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(91, 103, 241, 0.12);
+}
+.quick-row select {
+  height: 40px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  padding: 0 10px;
+  font-size: 14px;
+  background: var(--paper);
+  color: var(--ink);
+}
+.templates {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 14px;
+}
+.template {
+  text-align: left;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--canvas);
+  color: var(--muted);
+  padding: 8px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.template:hover {
+  color: var(--primary-dark);
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
@@ -227,9 +274,11 @@ function logout() {
 }
 .project-card {
   overflow: hidden;
+  cursor: pointer;
   transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
 }
-.project-card:hover {
+.project-card:hover,
+.project-card:focus-visible {
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
   border-color: var(--line-strong);
@@ -241,9 +290,6 @@ function logout() {
     radial-gradient(circle at 20% 20%, rgba(91, 103, 241, 0.06), transparent 45%),
     var(--canvas-deep);
   border-bottom: 1px solid var(--line);
-  display: flex;
-  align-items: center;
-  justify-content: center;
   overflow: hidden;
 }
 .thumb-img {
@@ -272,7 +318,6 @@ function logout() {
     var(--canvas-deep);
 }
 .thumb-icon {
-  display: block;
   font-size: 30px;
   color: var(--primary);
   opacity: 0.45;
@@ -337,59 +382,5 @@ function logout() {
   font-family: var(--font-display);
   font-size: 18px;
   font-weight: 600;
-}
-.mask {
-  position: fixed;
-  inset: 0;
-  background: rgba(46, 42, 38, 0.45);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 50;
-  backdrop-filter: blur(2px);
-}
-.dialog {
-  width: min(440px, 92%);
-  padding: 26px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  border-top: 3px solid var(--amber);
-  box-shadow: var(--shadow-md);
-}
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.label {
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-.field input,
-.field select,
-.field textarea {
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-md);
-  padding: 9px 12px;
-  font-size: 14px;
-  font-family: var(--font-body);
-  outline: none;
-  background: var(--paper);
-  color: var(--text);
-}
-.field input:focus,
-.field select:focus,
-.field textarea:focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(91, 103, 241, 0.12);
-}
-.dialog-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-top: 4px;
 }
 </style>

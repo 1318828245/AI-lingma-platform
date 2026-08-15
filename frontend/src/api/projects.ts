@@ -28,6 +28,19 @@ export async function getProject(id: number): Promise<Project> {
   return data;
 }
 
+export async function updateProject(
+  id: number,
+  payload: {
+    name?: string;
+    description?: string;
+    tech_stack?: string;
+    status?: string;
+  }
+): Promise<Project> {
+  const { data } = await api.patch(`/projects/${id}`, payload);
+  return data;
+}
+
 export async function deleteProject(id: number): Promise<void> {
   await api.delete(`/projects/${id}`);
 }

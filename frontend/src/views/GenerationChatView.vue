@@ -10,6 +10,9 @@
       </div>
       <div class="right">
         <span class="state" :class="genStateClass">{{ genStateLabel }}</span>
+        <button class="ghost" title="重命名项目" @click="renameProject">
+          重命名
+        </button>
         <button
           class="ghost"
           title="在新页面单独查看预览"
@@ -229,7 +232,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import LivePreviewPanel from "../components/LivePreviewPanel.vue";
 import MarkdownView from "../components/MarkdownView.vue";
 import StageRail from "../components/StageRail.vue";
@@ -241,7 +244,12 @@ import {
   generationEventUrl,
   getGeneration,
 } from "../api/generations";
-import { getProject, listMessages, listSessions } from "../api/projects";
+import {
+  getProject,
+  listMessages,
+  listSessions,
+  updateProject,
+} from "../api/projects";
 import type {
   Generation,
   Message,
@@ -767,6 +775,26 @@ async function cancel() {
   if (!runningGen.value) return;
   await cancelGeneration(runningGen.value.id);
   ElMessage.info("已请求取消");
+}
+
+async function renameProject() {
+  if (!project.value) return;
+  try {
+    const { value } = await ElMessageBox.prompt(
+      "输入新的项目名称",
+      "重命名项目",
+      {
+        inputValue: project.value.name,
+        inputValidator: (v: string) =>
+          v.trim() ? true : "项目名称不能为空",
+      }
+    );
+    const updated = await updateProject(projectId, { name: value.trim() });
+    project.value = updated;
+    ElMessage.success("已重命名");
+  } catch {
+    // 用户取消不提示
+  }
 }
 </script>
 
