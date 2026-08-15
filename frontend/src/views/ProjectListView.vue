@@ -90,15 +90,23 @@
             :alt="`${p.name} 截图`"
             loading="lazy"
             @load="thumbState[p.id] = 'ok'"
-            @error="thumbState[p.id] = 'error'"
+            @error="thumbError(p)"
           />
           <div v-if="thumbState[p.id] !== 'ok'" class="thumb-default">
             <span class="thumb-icon" aria-hidden="true">▧</span>
-            <span class="thumb-text">
-              {{
-                thumbState[p.id] === "loading" ? "正在生成截图…" : "尚未生成"
-              }}
+            <span v-if="thumbState[p.id] === 'error'" class="thumb-text">
+              暂无截图
             </span>
+            <span v-else class="thumb-text">
+              {{ thumbState[p.id] === "loading" ? "正在生成截图…" : "尚未生成" }}
+            </span>
+            <button
+              v-if="thumbState[p.id] === 'error'"
+              class="btn ghost sm retry-btn"
+              @click.stop="retryThumb(p)"
+            >
+              重试截图
+            </button>
           </div>
         </div>
         <div class="card-body">
@@ -148,12 +156,30 @@ const quickTemplates = [
   "做一个商品管理表格页，带搜索筛选",
 ];
 const thumbState = ref<Record<number, "loading" | "ok" | "error">>({});
-const thumbNonce = ref(Date.now());
+const thumbVersions = ref<Record<number, number>>({});
+const thumbRetried = ref<Record<number, boolean>>({});
 
 function thumbSrc(p: Project) {
   return `/api/projects/${p.id}/screenshot?token=${encodeURIComponent(
     auth.accessToken
-  )}&t=${thumbNonce.value}`;
+  )}&t=${thumbVersions.value[p.id] || 0}`;
+}
+
+function thumbError(p: Project) {
+  thumbState.value[p.id] = "error";
+  // 自动重试一次（截图可能还在生成中或 Edge 首次启动较慢）
+  if (!thumbRetried.value[p.id]) {
+    thumbRetried.value[p.id] = true;
+    setTimeout(() => {
+      thumbVersions.value[p.id] = (thumbVersions.value[p.id] || 0) + 1;
+      thumbState.value[p.id] = "loading";
+    }, 2500);
+  }
+}
+
+function retryThumb(p: Project) {
+  thumbVersions.value[p.id] = (thumbVersions.value[p.id] || 0) + 1;
+  thumbState.value[p.id] = "loading";
 }
 
 onMounted(async () => {
@@ -459,6 +485,9 @@ function logout() {
 }
 .thumb-text {
   font-size: 12px;
+}
+.retry-btn {
+  margin-top: 8px;
 }
 .card-body {
   padding: 14px 18px 18px;

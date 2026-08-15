@@ -82,12 +82,18 @@ def preview_file(
     if target.is_dir():
         target = target / "index.html"
     if target.is_file():
-        return FileResponse(target)
+        response = FileResponse(target)
+    elif (root / "index.html").exists() and not Path(clean).suffix:
+        response = FileResponse(root / "index.html")
+    else:
+        raise HTTPException(status_code=404, detail="文件不存在")
     # SPA fallback：非资源路径回退到 index.html
-    index = root / "index.html"
-    if index.exists() and not Path(clean).suffix:
-        return FileResponse(index)
-    raise HTTPException(status_code=404, detail="文件不存在")
+    if token:
+        # 让无头浏览器/iframe 的静态资源自动带上鉴权 Cookie
+        response.headers["Set-Cookie"] = (
+            f"preview_token={auth_token}; Path=/preview; SameSite=Lax; Max-Age=86400"
+        )
+    return response
 
 
 @router.get("/api/projects/{project_id}/files")
