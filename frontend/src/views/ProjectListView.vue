@@ -25,10 +25,11 @@
         <div class="qc-field qc-name">
           <span class="mono qc-label">项目名称</span>
           <div class="qc-input-wrap">
-            <input
+            <textarea
               v-model="quickName"
+              rows="2"
               placeholder="例如：我的名片"
-              @keyup.enter="quickCreate"
+              @keydown.enter.exact.prevent="quickCreate"
             />
           </div>
         </div>
@@ -247,7 +248,7 @@ function logout() {
   background: var(--paper);
 }
 .quick-create {
-  width: min(80%, 920px);
+  width: min(95%, 1000px);
   margin: 0 auto 28px;
   padding: 28px 32px 24px;
   min-height: 320px;
@@ -306,19 +307,22 @@ function logout() {
   text-transform: uppercase;
   color: var(--muted);
 }
-.qc-input-wrap input {
+.qc-input-wrap textarea {
   width: 100%;
-  height: 44px;
+  min-height: 68px;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-md);
-  padding: 0 14px;
+  padding: 12px 14px;
   font-size: 14px;
+  line-height: 1.5;
   background: var(--paper);
   color: var(--ink);
   outline: none;
+  resize: none;
+  overflow-y: auto;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
-.qc-input-wrap input:focus {
+.qc-input-wrap textarea:focus {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px rgba(91, 103, 241, 0.12);
 }
@@ -335,7 +339,7 @@ function logout() {
   background: transparent;
   color: var(--muted);
   font-size: 13px;
-  padding: 9px 22px;
+  padding: 12px 24px;
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
@@ -348,7 +352,7 @@ function logout() {
   font-weight: 600;
 }
 .qc-submit {
-  height: 44px;
+  height: 48px;
   font-size: 14px;
   white-space: nowrap;
 }
