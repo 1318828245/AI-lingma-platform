@@ -386,14 +386,6 @@ async def run_generation_agent(
                     "content": result[:4000],
                 }
             )
-        await _emit(
-            state,
-            {
-                "type": "thought",
-                "content": f"第 {step + 1} 轮工具调用完成（{len(tool_calls)} 个）",
-            },
-        )
-
     raise GenerationFailed(
         f"生成未在 {max_iterations} 轮工具调用内完成，已停止避免无限循环"
     )

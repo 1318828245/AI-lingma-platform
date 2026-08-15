@@ -139,6 +139,9 @@
                       失败
                     </span>
                   </div>
+                  <div v-if="toolsAllDone(entry)" class="tools-done">
+                    <ToolIcon name="check" /> 完成
+                  </div>
                 </div>
               </div>
 
@@ -341,6 +344,11 @@ function toggleCollapsed(entry: ChatEntry, event: Event) {
     const el = event.currentTarget as HTMLElement | null;
     nextTick(() => el?.scrollIntoView({ block: "nearest" }));
   }
+}
+
+function toolsAllDone(entry: ChatEntry) {
+  const items = entry.items || [];
+  return items.length > 0 && items.every((item) => !item.pending);
 }
 
 function queueDelta(kind: "think" | "assistant", text: string) {
@@ -1180,6 +1188,15 @@ async function renameProject() {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+.tools-done {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 2px 0;
 }
 .tool-item {
   display: flex;
