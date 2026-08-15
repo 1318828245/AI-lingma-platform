@@ -13,20 +13,46 @@
     </header>
 
     <section class="panel quick-create">
-      <p class="panel-title">快速创建项目</p>
-      <div class="quick-row">
-        <input
-          v-model="quickName"
-          placeholder="输入项目名称，例如：我的名片"
-          @keyup.enter="quickCreate"
-        />
-        <select v-model="quickStack" title="技术栈">
-          <option value="html">HTML</option>
-          <option value="vue3">Vue 3</option>
-        </select>
-        <button class="btn primary" @click="quickCreate">创建项目</button>
+      <div class="qc-head">
+        <span class="qc-icon" aria-hidden="true">✦</span>
+        <div>
+          <p class="panel-title">快速创建项目</p>
+          <p class="qc-sub">输入名称并选择技术栈，回车即可创建并进入</p>
+        </div>
       </div>
-      <div class="templates">
+
+      <div class="qc-field">
+        <span class="mono qc-label">项目名称</span>
+        <div class="qc-input-wrap">
+          <input
+            v-model="quickName"
+            placeholder="例如：我的名片"
+            @keyup.enter="quickCreate"
+          />
+        </div>
+      </div>
+
+      <div class="qc-field">
+        <span class="mono qc-label">技术栈</span>
+        <div class="seg">
+          <button
+            v-for="s in stacks"
+            :key="s.value"
+            class="seg-btn"
+            :class="{ on: quickStack === s.value }"
+            @click="quickStack = s.value"
+          >
+            {{ s.label }}
+          </button>
+        </div>
+      </div>
+
+      <button class="btn primary qc-submit" @click="quickCreate">
+        创建项目
+      </button>
+
+      <div class="qc-templates">
+        <p class="mono qc-label">提示词模板</p>
         <button
           v-for="tpl in quickTemplates"
           :key="tpl"
@@ -34,7 +60,9 @@
           :title="`使用模板：${tpl}`"
           @click="quickName = tpl"
         >
-          {{ tpl }}
+          <span class="tpl-mark" aria-hidden="true">✦</span>
+          <span class="tpl-text">{{ tpl }}</span>
+          <span class="tpl-arrow" aria-hidden="true">→</span>
         </button>
       </div>
     </section>
@@ -105,6 +133,10 @@ const auth = useAuthStore();
 const projects = ref<Project[]>([]);
 const quickName = ref("");
 const quickStack = ref<"html" | "vue3">("html");
+const stacks = [
+  { value: "html", label: "HTML" },
+  { value: "vue3", label: "Vue 3" },
+] as const;
 const quickTemplates = [
   "做一个深色风格的个人名片页",
   "做一个三列任务看板，支持增删移",
@@ -213,59 +245,130 @@ function logout() {
 .quick-create {
   max-width: 640px;
   margin: 0 auto 28px;
-  padding: 18px 20px;
+  padding: 22px 24px 20px;
   border-top: 3px solid var(--amber);
   box-shadow: var(--shadow-md);
 }
-.quick-row {
+.qc-head {
   display: flex;
-  gap: 10px;
-  margin-top: 12px;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
 }
-.quick-row input {
-  flex: 1;
-  height: 40px;
+.qc-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: var(--amber-soft);
+  color: #b97f1c;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
+  flex-shrink: 0;
+}
+.qc-sub {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 3px;
+}
+.qc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: 14px;
+}
+.qc-label {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.qc-input-wrap input {
+  width: 100%;
+  height: 44px;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-md);
-  padding: 0 12px;
-  font-size: 14px;
-  outline: none;
-  background: var(--paper);
-}
-.quick-row input:focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(91, 103, 241, 0.12);
-}
-.quick-row select {
-  height: 40px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-md);
-  padding: 0 10px;
+  padding: 0 14px;
   font-size: 14px;
   background: var(--paper);
   color: var(--ink);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
-.templates {
+.qc-input-wrap input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(91, 103, 241, 0.12);
+}
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--canvas);
+  align-self: flex-start;
+}
+.seg-btn {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  padding: 9px 22px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.seg-btn + .seg-btn {
+  border-left: 1px solid var(--line-strong);
+}
+.seg-btn.on {
+  background: var(--paper);
+  color: var(--primary);
+  font-weight: 600;
+}
+.qc-submit {
+  width: 100%;
+  height: 44px;
+  font-size: 14px;
+}
+.qc-templates {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  margin-top: 14px;
+  gap: 8px;
+  margin-top: 18px;
 }
 .template {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
   text-align: left;
-  border: 1px dashed var(--line-strong);
+  border: 1px solid var(--line);
   border-radius: var(--radius-sm);
-  background: var(--canvas);
+  background: var(--paper);
   color: var(--muted);
-  padding: 8px 12px;
+  padding: 10px 12px;
   font-size: 13px;
   cursor: pointer;
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  transition: color 0.15s, border-color 0.15s, background 0.15s, transform 0.15s;
 }
 .template:hover {
   color: var(--primary-dark);
   border-color: var(--primary);
   background: var(--primary-soft);
+  transform: translateX(2px);
+}
+.tpl-mark {
+  color: var(--amber);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.tpl-text {
+  flex: 1;
+}
+.tpl-arrow {
+  color: var(--faint);
+  font-size: 13px;
+  flex-shrink: 0;
 }
 .grid {
   display: grid;
