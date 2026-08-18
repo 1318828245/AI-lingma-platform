@@ -88,7 +88,6 @@
             :class="{ visible: thumbState[p.id] === 'ok' }"
             :src="thumbSrc(p)"
             :alt="`${p.name} 截图`"
-            loading="lazy"
             @load="thumbState[p.id] = 'ok'"
             @error="thumbError(p)"
           />

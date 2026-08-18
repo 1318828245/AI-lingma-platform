@@ -1,5 +1,5 @@
 # PROJECT_STATE
-更新于：2026-08-15 14:10（每轮结束必须更新）
+更新于：2026-08-18（以当前代码核对）
 
 ## 当前里程碑
 - 里程碑：M1（骨架与核心生成回路）
@@ -7,7 +7,7 @@
 
 ## 已完成（含验证方式）
 - [x] 后端骨架可启动（uvicorn 冒烟：/api/health 返回 ok；admin 登录成功）
-- [x] 全部 14 张数据表模型（users/projects/sessions/generations/modifications/
+- [x] 数据表模型（当前模型文件 14 个，对应业务表清单含 daily_stats，共 15 张表：users/projects/sessions/generations/modifications/
       files/file_versions/project_versions/messages/deployments/templates/
       evaluations/guardrail_events/metrics/daily_stats）
 - [x] Alembic 脚手架 + 初始迁移（对全新 SQLite 库 autogenerate 并 upgrade head 通过）
@@ -141,7 +141,7 @@
       轻量 Shell 解释器（shlex 解析引号 + && / || / ; 顺序执行 + VAR=val 前缀），
       不走 cmd.exe（规避 Windows 引号怪癖），npm/node/python 直接解析 PATH 执行
 - [x] 保留 sandbox 模式（白名单受限执行）供生产/受限环境切换；管道/重定向暂不支持
-      （返回明确提示）；pytest 51 passed（新增 shell 操作符用例）
+      （返回明确提示）；pytest 可收集 62 例，当前全量回归通过
 - [x] 首页改版：顶部醒目“AI 灵码平台”标识；居中快速创建框（项目名 + HTML/Vue 选项 +
       创建按钮），下方三个竖排提示词模板（点击填入名称）；项目卡片整卡可点击进入
       （操作按钮独立不冒泡）；移除旧的“新建项目”弹窗
@@ -166,14 +166,27 @@
       - 前端截图失败后 2.5s 自动重试一次，并提供“重试截图”按钮
 
 ## 进行中 / 下一步
-- [ ] 下一步：M2 预览点选修改（ElementPicker、修改工作流、版本快照/回滚、diff 面板）
+
+## 最新同步（2026-08-18）
+- [x] 生成工作台切换为明亮视觉体系：白色面板、浅灰画布、蓝紫主色、统一圆角/边框/阴影，移除主界面的深色工作台风格。
+- [x] 统一前端组件排版：顶部标题加大并强化层级，正文/事件标题/辅助信息/代码文字分别设置字号、字重和行高；修复深色主题遗留的低对比度文字。
+- [x] 左右区域支持 Pointer Events 拖拽分栏：必须按住鼠标才能调整，松开即停止；宽度边界根据左右最小可用宽度动态计算。
+- [x] 预览区域适配桌面、平板、手机三档视口，预览画布与整体容器宽度联动，避免无效留白。
+- [x] 对话事件视觉分层：stage、thinking、tool_call、file_written、build_log、error 使用独立卡片/状态色；连续工具调用合并展示。
+- [x] SSE 流式代码展示：`file_written` 事件携带文件内容，前端展示当前写入文件的代码预览并自动收起旧文件内容。
+- [x] 命令执行修复：完整字符串命令支持 shell 语义；补充 `ls -la`、`wc -l`、`head -c` 等常用命令及 Windows 回退处理。
+- [x] 当前验证：backend `pytest -q` 全量 63 例通过；frontend `npm run build` 通过（包含 `vue-tsc --noEmit`）。
+- [x] M2-1 版本基础能力：生成成功自动创建项目版本快照；新增版本列表、当前工作区与版本 diff、版本回滚 API；回滚同步恢复工作区和文件元数据；新增版本 API 回归测试
+- [x] M2-2 文本修改闭环：iframe 点选/悬停高亮、元素快照采集、修改面板、修改任务 API/SSE、源码定位、文本局部替换、diff、修改后版本快照；新增修改 API 回归测试
+- [x] M2-3 Agent 与版本面板：真实 LLM 修改 Agent 工具循环（list/read/edit/write/finish）、样式/结构修改提示、前端 diff 查看、版本历史和回滚面板；Mock 模式继续用于离线回归
+- [ ] 下一步：M3 质量闭环（LLM 护轨复核、5 维自评、低分修复循环）
 - [ ] 后续：M3 护轨 LLM 复核与自评、M4 部署引擎（本轮不开始）
 
 ## 关键决策与默认值
 - 数据库：SQLite（storage/app.db），生产切 PostgreSQL；开发用 create_all，
   Alembic 迁移已就绪并验证
 - 本机 Python 3.10.19（文档要求 3.11+），代码按 3.10 兼容编写；Node 18.20.8
-- 沙箱：本地开发为受限子进程（白名单命令 + 超时 + 工作区约束），Docker 沙箱 M6 补齐
+- 命令执行：本地开发默认 shell 模式（等同本机终端权限）；sandbox 为白名单受限模式，Docker 沙箱 M6 补齐
 - 运行环境：conda env01-p10-drawimg（Python 3.10；langgraph 1.2.11 / langchain-core 1.5.4 /
   langchain-openai 1.5.0）；backend/.venv 已停用但未删除（gitignored，可自行清理）
 - LangGraph：conda 环境预装 langgraph 1.2.x，生成工作流已用 StateGraph 实现；
@@ -184,10 +197,10 @@
 - 预览：基础版直接服务 dist（优先）或工作区静态文件；按项目的 Vite dev-server
   热更新推迟到 M2/M6；iframe 使用 sandbox + 服务端代理
 - SSE：EventSource 用 query token 鉴权；普通 API 仍用 Authorization header
-- 前端构建暂为 vite build（未接入 vue-tsc 类型门禁，M6 打磨）
+- 前端构建为 typecheck（vue-tsc --noEmit）+ vite build，当前已接入类型门禁
 - 预览内嵌在生成对话页右侧；全屏预览页仍保留供独立查看
 - 字体全部本地打包（@fontsource），不依赖外部 CDN
-- Agent 轮次上限默认 10（AI_LINGMA_AGENT_MAX_ITERATIONS）；run_command 走白名单+超时
+- Agent 轮次上限默认 50（AI_LINGMA_AGENT_MAX_ITERATIONS）；run_command 默认走 shell 模式，sandbox 模式可切换
 - 预览鉴权：preview_token Cookie（path=/preview，前端 JS 写入，非 HttpOnly）；
   仅限本地/内网开发，M4/M6 部署隔离时升级为 HttpOnly + 严格 CSP
 - SSE 事件扩展：reasoning_delta / assistant_delta / tool_call_started /
@@ -213,9 +226,8 @@
 - 项目删除先停任务（当前无任务）再清理库记录与工作区目录
 
 ## 最近构建/测试结果
-- 最后命令：python -m pytest -q → 34 passed；npm run build → 通过（conda + node 18）
-- 最后命令：python -m pytest -q → 37 passed（新增 Agent 3 例）
-- 最后命令：python -m pytest -q → 38 passed（新增 Cookie 预览 1 例）
+- 当前验证：frontend `npm run build` 通过（包含 `vue-tsc`，Vite 构建完成）
+- 当前验证：backend `pytest -q` 全量 63 例通过；frontend `npm run build` 通过（包含 `vue-tsc --noEmit`）
 - 真实 LLM 连通：POST /chat/completions → 200；端到端生成 succeeded（model=deepseek-v4-flash）
 - 真实 Agent 冒烟：python smoke_agent.py → succeeded，LLM 自主写 index.html
 - 前后端 E2E 冒烟：Vite 代理登录→创建项目→生成 succeeded→预览 HTTP 200
@@ -223,13 +235,13 @@
 - alembic upgrade head → 通过（e0806b14bcc1 + 1c4243ee8fbd；dev 库已迁移）
 - 真实构建冒烟：任务看板模板生成 → npm install/build → dist/index.html 产出，succeeded
 - uvicorn 冒烟：health ok、admin 登录 200（M1-1）
-- 最后错误：无
 
 ## 已知问题与阻塞
 - Starlette 1.6 提示 httpx TestClient 弃用（仅警告，不影响运行）
-- 暂无 LLM API Key / base_url 配置；真实生成联调需在 .env 提供
+- 真实 LLM 配置位于 backend/.env（gitignored，当前代码默认仍可回退 mock）；不要将密钥写入仓库
 - PyPI 索引对 langgraph-core 包名仍 404，但 conda 环境预装 langgraph 1.2.11 已满足
 - Windows 控制台向 Python 传中文 stdin 会乱码；中文脚本请写成 .py 文件执行
+- pytest 默认缓存插件在当前工作区文件系统上可能导致收尾阶段卡住；`backend/pytest.ini` 已关闭该插件，测试命令可正常退出
 
 ## 续接指引
 - 启动：cd backend && python -m uvicorn app.main:app --reload --port 8000
@@ -239,4 +251,4 @@
 - 管理员账号：admin / admin123（.env 可改）
 - 快速体验生成：POST /api/projects/{id}/generations {"requirement":"..."}，
   然后 GET /api/generations/{id}/events 看 SSE，GET /api/generations/{id} 轮询状态
-- 下一步入口：M2 —— backend/app/agents/modification/ + 前端 ElementPicker
+- 下一步入口：M3 —— backend/app/services/evaluation.py 与护轨 LLM 复核；M2 修改 Agent 在配置真实 LLM 时启用，未配置时使用 Mock

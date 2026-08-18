@@ -5,11 +5,13 @@ command_mode=sandbox：白名单受限子进程（生产/受限环境用），Do
 """
 
 import asyncio
+import contextlib
 import fnmatch
 import os
 import re
 import shlex
 import shutil
+import subprocess
 from pathlib import Path
 
 from app.core.config import get_settings
@@ -35,6 +37,10 @@ EMULATED_COMMANDS = {
     "type",
     "echo",
     "cd",
+    "rm",
+    "del",
+    "wc",
+    "head",
 }
 
 
@@ -42,15 +48,55 @@ class BuildError(Exception):
     pass
 
 
+async def _run_subprocess_fallback(
+    args: list[str],
+    cwd: Path,
+    env: dict[str, str],
+    timeout: int,
+) -> tuple[int, bytes]:
+    """在当前事件循环不支持 asyncio 子进程时，使用线程中的同步子进程兜底。
+
+    某些受限运行环境会让 asyncio.create_subprocess_exec 直接抛
+    NotImplementedError，但同步 subprocess 仍然可用。把阻塞调用放进线程，
+    避免卡住 SSE 和任务队列。
+    """
+
+    def execute() -> tuple[int, bytes]:
+        try:
+            completed = subprocess.run(
+                args,
+                cwd=str(cwd),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                env=env,
+                timeout=timeout,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise BuildError(f"命令超时（{timeout}s）: {' '.join(args)}") from exc
+        return completed.returncode, completed.stdout or b""
+
+    return await asyncio.to_thread(execute)
+
+
 async def run_command(
-    command: list[str],
+    command: list[str] | str,
     cwd: Path,
     timeout: int = 300,
 ) -> tuple[int, str]:
-    if get_settings().command_mode == "shell":
-        return await _run_shell_command(command, cwd, timeout)
     if isinstance(command, str):
         command = shlex.split(command)
+    else:
+        command = [str(part) for part in command]
+        # 部分模型会把整条命令放进数组的单个元素中： ["ls -la"]。
+        # 如果不拆分，会把 "ls -la" 当作可执行文件名，最终报找不到命令。
+        if len(command) == 1 and any(ch.isspace() for ch in command[0]):
+            command = shlex.split(command[0])
+    cwd = cwd.resolve()
+    if not cwd.exists() or not cwd.is_dir():
+        raise BuildError(f"工作目录不存在或不是目录: {cwd}")
+    if get_settings().command_mode == "shell":
+        return await _run_shell_command(command, cwd, timeout)
     return await _run_sandbox_command(command, cwd, timeout)
 
 
@@ -59,6 +105,7 @@ async def _run_sandbox_command(
     cwd: Path,
     timeout: int = 300,
 ) -> tuple[int, str]:
+    command = [str(part) for part in command]
     if not command:
         raise BuildError("空命令")
     if command[0] in EMULATED_COMMANDS:
@@ -66,7 +113,7 @@ async def _run_sandbox_command(
     if command[0] not in ALLOWED_COMMANDS:
         raise BuildError(
             f"命令不在白名单: {command[0]}"
-            "（支持 npm/npx/node/python/python3 与内置 ls/cat/pwd/dir/type/echo/find/grep/where）"
+            "（支持 npm/npx/node/python/python3 与内置 ls/cat/pwd/dir/type/echo/find/grep/where/wc/head）"
         )
     exe = _resolve_exe(command[0])
     if exe is None:
@@ -80,6 +127,7 @@ async def _run_sandbox_command(
         # 强制 python 子进程以 UTF-8 输出，避免 GBK 编码导致内容乱码
         env["PYTHONIOENCODING"] = "utf-8"
         env["PYTHONUTF8"] = "1"
+    proc = None
     try:
         proc = await asyncio.create_subprocess_exec(
             *args,
@@ -90,12 +138,17 @@ async def _run_sandbox_command(
         )
         output, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except NotImplementedError:
-        raise BuildError("当前环境不支持执行子进程命令（NotImplementedError）")
+        return_code, output = await _run_subprocess_fallback(args, cwd, env, timeout)
+        text = output.decode("utf-8", errors="replace")
+        if "\ufffd" in text:
+            text = output.decode("gbk", errors="replace")
+        return return_code, text
     except asyncio.TimeoutError:
-        try:
+        if proc is not None:
             proc.kill()
-        except Exception:
-            pass
+            # 必须回收 communicate，避免 Windows 上留下悬挂子进程/句柄。
+            with contextlib.suppress(Exception):
+                await proc.communicate()
         raise BuildError(f"命令超时（{timeout}s）: {' '.join(command)}")
     text = output.decode("utf-8", errors="replace")
     if "\ufffd" in text:
@@ -111,7 +164,9 @@ async def _run_shell_command(
     """轻量 Shell 语义：shlex 解析引号，支持 && / || / ; 顺序执行与 VAR=val 前缀；
     命令不经 cmd.exe（避免 Windows 引号怪癖），暂不支持管道/重定向。"""
     if isinstance(command, list):
-        cmdline = " ".join(command)
+        # 直接拼接会破坏带空格、引号和括号的参数，例如 python -c。
+        # 用 shlex.join 生成可逆的命令行，再由同一个解析器还原。
+        cmdline = shlex.join([str(part) for part in command])
     else:
         cmdline = command
     if not cmdline.strip():
@@ -119,6 +174,11 @@ async def _run_shell_command(
     tokens = shlex.split(cmdline)
     if not tokens:
         raise BuildError("空命令")
+    # Windows 开发环境里模型可能生成 bash/powershell 脚本。
+    # 这些解释器必须把后续脚本作为一个整体传入，不能被本层的
+    # && / ; 分段器拆坏。sandbox 模式仍不会放行它们。
+    if tokens[0].lower() in ("bash", "sh", "powershell", "pwsh", "cmd"):
+        return await _run_direct(tokens, cwd, timeout, os.environ.copy())
     if any(op in tokens for op in ("|", ">", ">>", "<")):
         raise BuildError("暂不支持管道/重定向语法，请拆分成多条命令执行")
 
@@ -175,6 +235,7 @@ async def _run_direct(
         args = [os.environ.get("COMSPEC", "cmd.exe"), "/c", exe, *argv[1:]]
     else:
         args = [exe, *argv[1:]]
+    proc = None
     try:
         proc = await asyncio.create_subprocess_exec(
             *args,
@@ -185,12 +246,16 @@ async def _run_direct(
         )
         output, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
     except NotImplementedError:
-        raise BuildError("当前环境不支持执行子进程命令（NotImplementedError）")
+        return_code, output = await _run_subprocess_fallback(args, cwd, env, timeout)
+        text = output.decode("utf-8", errors="replace")
+        if "\ufffd" in text:
+            text = output.decode("gbk", errors="replace")
+        return return_code, text
     except asyncio.TimeoutError:
-        try:
+        if proc is not None:
             proc.kill()
-        except Exception:
-            pass
+            with contextlib.suppress(Exception):
+                await proc.communicate()
         raise BuildError(f"命令超时（{timeout}s）: {' '.join(argv)}")
     text = output.decode("utf-8", errors="replace")
     if "\ufffd" in text:
@@ -216,7 +281,8 @@ def _resolve_exe(name: str) -> str | None:
     for path in found:
         if "WindowsApps" not in path:
             return path
-    return found[0] if found else None
+    # Windows 商店 alias 是不可执行的 stub，不能把它当作真实解释器返回。
+    return None
 
 
 def _is_flag(arg: str) -> bool:
@@ -262,6 +328,47 @@ def _emulate_command(command: list[str], cwd: Path) -> tuple[int, str]:
                     target.read_text(encoding="utf-8", errors="replace")
                 )
             return 0, "\n".join(chunks)[:8000] + "\n"
+        if name == "wc":
+            # 支持生成 Agent 常用的 wc -l file；只读取工作区内文件。
+            line_mode = "-l" in args or "/l" in args
+            files = [arg for arg in args if not _is_flag(arg)]
+            if not line_mode or not files:
+                return 1, "wc: 仅支持 wc -l <file>\n"
+            rows: list[str] = []
+            for raw in files:
+                target = (cwd / raw).resolve()
+                if not target.is_relative_to(root):
+                    return 1, f"wc: 路径越界: {raw}\n"
+                if not target.is_file():
+                    return 1, f"wc: 找不到文件: {raw}\n"
+                text = target.read_text(encoding="utf-8", errors="replace")
+                rows.append(f"{len(text.splitlines())} {raw}")
+            return 0, "\n".join(rows) + "\n"
+        if name == "head":
+            # 支持 head -c N file，按字节截取并尽量保持 UTF-8 可读。
+            count = None
+            files: list[str] = []
+            idx = 0
+            while idx < len(args):
+                arg = args[idx]
+                if arg in ("-c", "/c") and idx + 1 < len(args):
+                    try:
+                        count = int(args[idx + 1])
+                    except ValueError:
+                        return 1, f"head: 无效字节数: {args[idx + 1]}\n"
+                    idx += 2
+                    continue
+                if not _is_flag(arg):
+                    files.append(arg)
+                idx += 1
+            if count is None or len(files) != 1 or count < 0:
+                return 1, "head: 仅支持 head -c <bytes> <file>\n"
+            target = (cwd / files[0]).resolve()
+            if not target.is_relative_to(root):
+                return 1, f"head: 路径越界: {files[0]}\n"
+            if not target.is_file():
+                return 1, f"head: 找不到文件: {files[0]}\n"
+            return 0, target.read_bytes()[:count].decode("utf-8", errors="replace")
         if name == "echo":
             return 0, " ".join(args) + "\n"
         if name == "cd":
@@ -271,12 +378,40 @@ def _emulate_command(command: list[str], cwd: Path) -> tuple[int, str]:
             if target.is_dir() and target.is_relative_to(root):
                 return 0, "（cd 仅校验目录，命令始终在项目目录执行）\n"
             return 1, f"cd: {args[0]}: 目录不存在\n"
+        if name in ("rm", "del"):
+            # 仅允许删除工作区内的文件；-f 只是忽略不存在，不允许隐式递归。
+            force = any(arg in ("-f", "/f") for arg in args)
+            targets = [arg for arg in args if not _is_flag(arg)]
+            if not targets:
+                return 1, f"{name}: 缺少文件参数\n"
+            for raw in targets:
+                target = (cwd / raw).resolve()
+                if not target.is_relative_to(root):
+                    return 1, f"{name}: 路径越界: {raw}\n"
+                if not target.exists():
+                    if force:
+                        continue
+                    return 1, f"{name}: 找不到文件: {raw}\n"
+                if target.is_dir():
+                    return 1, f"{name}: 拒绝删除目录，请使用受控清理接口: {raw}\n"
+                target.unlink()
+            return 0, ""
         if name == "find":
-            paths = [a for a in args if not _is_flag(a)] or ["."]
+            # find . -name "*.js"：-name 的值不是搜索路径。
+            paths: list[str] = []
             pattern = None
-            if "-name" in args:
-                idx = args.index("-name")
-                pattern = args[idx + 1] if idx + 1 < len(args) else None
+            idx = 0
+            while idx < len(args):
+                arg = args[idx]
+                if arg == "-name":
+                    if idx + 1 < len(args):
+                        pattern = args[idx + 1]
+                    idx += 2
+                    continue
+                if not _is_flag(arg):
+                    paths.append(arg)
+                idx += 1
+            paths = paths or ["."]
             found: list[str] = []
             for raw in paths:
                 base = (cwd / raw).resolve()

@@ -172,7 +172,10 @@ async def _execute_tool(state: GenerationState, name: str, args: dict) -> str:
         _output_guardrail_check(state, path, content)
         with SessionLocal() as db:
             write_file(db, state["project_id"], workspace, path, content)
-        await _emit(state, {"type": "file_written", "path": path})
+        await _emit(
+            state,
+            {"type": "file_written", "path": path, "content": content[:16000]},
+        )
         return json.dumps({"ok": True, "path": path}, ensure_ascii=False)
     if name == "edit_file":
         path, old, new = args["path"], args["old"], args["new"]
@@ -182,7 +185,11 @@ async def _execute_tool(state: GenerationState, name: str, args: dict) -> str:
                 edit_file(db, state["project_id"], workspace, path, old, new)
         except Exception as exc:
             return json.dumps({"error": f"{type(exc).__name__}: {exc}"}, ensure_ascii=False)
-        await _emit(state, {"type": "file_written", "path": path})
+        updated = read_file(workspace, path)
+        await _emit(
+            state,
+            {"type": "file_written", "path": path, "content": updated[:16000]},
+        )
         return json.dumps({"ok": True, "path": path}, ensure_ascii=False)
     if name == "run_command":
         command = args.get("command") or []

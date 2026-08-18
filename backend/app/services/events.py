@@ -21,7 +21,7 @@ class EventBroker:
             queues = self._queues.get(key)
             if queues and queue in queues:
                 queues.remove(queue)
-            if queues and not queues:
+            if queues is not None and not queues:
                 self._queues.pop(key, None)
 
     async def publish(self, key: int, event: dict) -> None:

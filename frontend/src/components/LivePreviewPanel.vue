@@ -20,16 +20,27 @@
         <span aria-hidden="true">⟳</span>
         刷新
       </button>
+      <button
+        class="picker-btn"
+        :class="{ active: pickerEnabled }"
+        :disabled="!ready"
+        title="在预览中点选元素进行修改"
+        @click="togglePicker"
+      >
+        {{ pickerEnabled ? "退出点选" : "点选修改" }}
+      </button>
     </div>
 
     <div class="canvas">
       <iframe
         v-if="ready"
         :key="frameKey"
+        ref="frameRef"
         :src="frameSrc"
         :style="{ width: frameWidth }"
         sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
         title="项目实时预览"
+        @load="onFrameLoad"
       />
       <div v-else-if="loading" class="empty">
         <span class="spinner" />
@@ -47,6 +58,9 @@
         <p class="muted">在左侧描述需求，完成后预览会自动亮起来</p>
       </div>
     </div>
+    <div v-if="pickerEnabled" class="picker-tip">
+      点选预览中的元素，左侧修改面板会显示元素信息和修改输入框。按按钮可退出点选。
+    </div>
 
     <div class="foot mono">
       <span class="foot-stage">
@@ -60,10 +74,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { getPreviewStatus } from "../api/projects";
 import { useAuthStore } from "../stores/auth";
-import type { PreviewStatus } from "../types";
+import type { ElementSnapshot, PreviewStatus } from "../types";
+
+const emit = defineEmits<{
+  (event: "element-selected", snapshot: ElementSnapshot): void;
+}>();
 
 const props = withDefaults(
   defineProps<{
@@ -86,6 +104,9 @@ const previewStatus = ref<PreviewStatus | null>(null);
 const loading = ref(true);
 const viewport = ref<"desktop" | "tablet" | "mobile">("desktop");
 const frameKey = ref(0);
+const frameRef = ref<HTMLIFrameElement | null>(null);
+const pickerEnabled = ref(false);
+let pickerCleanup: (() => void) | null = null;
 
 const viewports = [
   { key: "desktop", label: "桌面", title: "桌面视口" },
@@ -95,8 +116,8 @@ const viewports = [
 
 const ready = computed(() => previewStatus.value?.status === "ready");
 const frameWidth = computed(() => {
-  if (viewport.value === "mobile") return "375px";
-  if (viewport.value === "tablet") return "768px";
+  if (viewport.value === "mobile") return "min(100%, 420px)";
+  if (viewport.value === "tablet") return "min(100%, 820px)";
   return "100%";
 });
 const frameSrc = computed(
@@ -140,13 +161,104 @@ function ensurePreviewCookie() {
 }
 
 function reload() {
+  pickerCleanup?.();
+  pickerCleanup = null;
   frameKey.value += 1;
+}
+
+function selectorFor(element: Element): string {
+  if (element instanceof HTMLElement && element.id) return `#${CSS.escape(element.id)}`;
+  const parts: string[] = [];
+  let current: Element | null = element;
+  while (current && current.nodeType === 1 && parts.length < 6) {
+    let part = current.tagName.toLowerCase();
+    if (current instanceof HTMLElement && current.classList.length) {
+      part += `.${Array.from(current.classList).slice(0, 2).map((name) => CSS.escape(name)).join(".")}`;
+    }
+    const parent: HTMLElement | null = current.parentElement;
+    if (parent) {
+      const same = Array.from(parent.children).filter((child) => child.tagName === current?.tagName);
+      if (same.length > 1) part += `:nth-of-type(${same.indexOf(current) + 1})`;
+    }
+    parts.unshift(part);
+    current = parent;
+  }
+  return parts.join(" > ");
+}
+
+function snapshotElement(element: Element): ElementSnapshot {
+  const html = element.outerHTML.slice(0, 2000);
+  const rect = element.getBoundingClientRect();
+  return {
+    tag: element.tagName.toLowerCase(),
+    text: (element.textContent || "").trim().replace(/\s+/g, " ").slice(0, 500),
+    id: element instanceof HTMLElement ? element.id : "",
+    className: element instanceof HTMLElement ? element.className : "",
+    selector: selectorFor(element),
+    html,
+    rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+  };
+}
+
+function installPicker() {
+  pickerCleanup?.();
+  const doc = frameRef.value?.contentDocument;
+  if (!pickerEnabled.value || !doc?.body) return;
+  let hovered: HTMLElement | null = null;
+  let selected: HTMLElement | null = null;
+  const clearOutline = (element: HTMLElement | null) => {
+    if (!element) return;
+    element.style.removeProperty("outline");
+    element.style.removeProperty("outline-offset");
+  };
+  const outline = (element: HTMLElement | null, color: string) => {
+    if (!element) return;
+    element.style.setProperty("outline", `2px solid ${color}`, "important");
+    element.style.setProperty("outline-offset", "2px", "important");
+  };
+  const onMove = (event: MouseEvent) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement) || target === doc.body || target === doc.documentElement) return;
+    if (hovered !== target) {
+      if (hovered !== selected) clearOutline(hovered);
+      hovered = target;
+      outline(hovered, "#5264d8");
+    }
+  };
+  const onClick = (event: MouseEvent) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement) || target === doc.body || target === doc.documentElement) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (selected && selected !== target) clearOutline(selected);
+    selected = target;
+    outline(selected, "#d89132");
+    emit("element-selected", snapshotElement(target));
+  };
+  doc.addEventListener("mousemove", onMove, true);
+  doc.addEventListener("click", onClick, true);
+  pickerCleanup = () => {
+    doc.removeEventListener("mousemove", onMove, true);
+    doc.removeEventListener("click", onClick, true);
+    clearOutline(hovered);
+    clearOutline(selected);
+  };
+}
+
+function togglePicker() {
+  pickerEnabled.value = !pickerEnabled.value;
+  installPicker();
+}
+
+function onFrameLoad() {
+  if (pickerEnabled.value) installPicker();
 }
 
 onMounted(() => {
   ensurePreviewCookie();
   checkStatus();
 });
+onBeforeUnmount(() => pickerCleanup?.());
 watch(
   () => auth.accessToken,
   () => ensurePreviewCookie()
@@ -246,6 +358,24 @@ watch(
   border-color: var(--primary);
   background: var(--primary-soft);
 }
+.picker-btn {
+  border: 1px solid rgba(82, 100, 216, 0.35);
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+  padding: 5px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 12px;
+}
+.picker-btn:hover,
+.picker-btn.active {
+  background: var(--primary);
+  color: #fff;
+}
+.picker-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 .canvas {
   flex: 1;
   min-height: 0;
@@ -256,10 +386,19 @@ watch(
   background:
     radial-gradient(circle at 20% 20%, rgba(91, 103, 241, 0.05), transparent 45%),
     var(--canvas-deep);
-  padding: 14px;
+  padding: 8px;
+}
+.picker-tip {
+  padding: 7px 14px;
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+  border-top: 1px solid var(--line);
+  font-size: 12px;
 }
 .canvas iframe {
   height: 100%;
+  max-width: 100%;
+  min-width: 0;
   border: none;
   border-radius: var(--radius-md);
   background: var(--paper);

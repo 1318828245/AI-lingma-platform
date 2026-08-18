@@ -122,7 +122,7 @@ async def project_screenshot(
     user: User = Depends(get_current_user_sse),
     db: Session = Depends(get_db),
 ):
-    """首页项目截图：生成/失败则 404，前端回退默认图块。"""
+    """首页项目截图：首次访问时生成并缓存，产物变化后自动重建。"""
     get_owned_project(db, project_id, user.id)
     root, mode = _preview_root(project_id)
     if mode not in ("dist", "static"):

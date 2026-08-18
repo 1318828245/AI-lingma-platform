@@ -16,6 +16,7 @@ from app.services.chat_log import save_generation_event
 from app.services.events import get_broker
 from app.services.llm import LLMClient
 from app.services.sandbox import validate_build as run_validate_build
+from app.services.version import snapshot_project
 
 INPUT_BLOCK_PATTERNS = [
     "忽略以上",
@@ -297,7 +298,10 @@ async def _write_with_guardrail(
     await publish_event(
         state, {"type": "tool_call", "tool": "write_file", "args": {"path": rel_path}}
     )
-    await publish_event(state, {"type": "file_written", "path": rel_path})
+    await publish_event(
+        state,
+        {"type": "file_written", "path": rel_path, "content": content[:16000]},
+    )
     written.append(rel_path)
 
 
@@ -316,7 +320,11 @@ async def _edit_with_guardrail(
     await publish_event(
         state, {"type": "tool_call", "tool": "edit_file", "args": {"path": rel_path}}
     )
-    await publish_event(state, {"type": "file_written", "path": rel_path})
+    updated = read_file(workspace, rel_path)
+    await publish_event(
+        state,
+        {"type": "file_written", "path": rel_path, "content": updated[:16000]},
+    )
     written.append(rel_path)
 
 
@@ -508,6 +516,13 @@ async def summarize(state: GenerationState) -> dict:
             gen.llm_model = state.get("llm_model") or get_settings().llm_model
             gen.prompt_tokens = state["token_usage"]["prompt_tokens"]
             gen.completion_tokens = state["token_usage"]["completion_tokens"]
+            snapshot_project(
+                db,
+                gen.project_id,
+                source_type="generation",
+                source_id=gen.id,
+                summary=summary[:500],
+            )
         db.add(
             Message(
                 session_id=state["session_id"],

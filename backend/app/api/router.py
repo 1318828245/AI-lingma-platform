@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api import admin, auth, generations, preview, projects, sessions, templates, users
+from app.api import admin, auth, generations, modifications, preview, projects, sessions, templates, users, versions
 
 api_router = APIRouter()
 api_router.include_router(auth.router)
@@ -11,3 +11,5 @@ api_router.include_router(generations.router)
 api_router.include_router(templates.router)
 api_router.include_router(admin.router)
 api_router.include_router(preview.router)
+api_router.include_router(versions.router)
+api_router.include_router(modifications.router)

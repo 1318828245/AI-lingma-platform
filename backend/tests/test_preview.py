@@ -1,3 +1,5 @@
+import asyncio
+from pathlib import Path
 from urllib.parse import quote
 
 
@@ -169,3 +171,26 @@ def test_screenshot_fallback_when_capture_fails(client, admin_headers, monkeypat
         f"/api/projects/{project['id']}/screenshot", headers=admin_headers
     )
     assert resp.status_code == 404
+
+
+def test_screenshot_uses_sync_process_when_async_subprocess_unavailable(
+    tmp_path, monkeypatch
+):
+    import app.services.screenshot as screenshot
+
+    monkeypatch.setattr(screenshot, "find_browser", lambda: "browser.exe")
+
+    async def unsupported(*args, **kwargs):
+        raise NotImplementedError
+
+    def fake_run(command, **kwargs):
+        output_arg = next(item for item in command if str(item).startswith("--screenshot="))
+        output = Path(str(output_arg).split("=", 1)[1])
+        output.write_bytes(b"\x89PNG\r\n\x1a\nimage")
+        return type("Completed", (), {"returncode": 0})()
+
+    monkeypatch.setattr(screenshot.asyncio, "create_subprocess_exec", unsupported)
+    monkeypatch.setattr(screenshot.subprocess, "run", fake_run)
+    output = tmp_path / "thumb.png"
+    assert asyncio.run(screenshot.capture_screenshot("http://test", output))
+    assert output.exists()

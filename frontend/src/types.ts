@@ -78,6 +78,57 @@ export interface SseEvent {
   [key: string]: unknown;
 }
 
+export interface ElementSnapshot {
+  tag: string;
+  text: string;
+  id: string;
+  className: string;
+  selector: string;
+  html: string;
+  rect: { x: number; y: number; width: number; height: number };
+}
+
+export interface Modification {
+  id: number;
+  project_id: number;
+  session_id: number;
+  generation_id: number | null;
+  selector_json: Record<string, unknown> | null;
+  element_snapshot: ElementSnapshot | null;
+  instruction: string;
+  related_files_json: string[] | null;
+  diff_json: Record<string, unknown> | null;
+  status: string;
+  attempt: number;
+  max_attempts: number;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string;
+}
+
+export interface ProjectVersion {
+  id: number;
+  project_id: number;
+  version_no: number;
+  source_type: string;
+  source_id: number | null;
+  summary: string | null;
+  file_count: number;
+  created_at: string;
+}
+
+export interface VersionDiffFile {
+  path: string;
+  status: string;
+  diff: string;
+}
+
+export interface VersionDiff {
+  version_id: number;
+  version_no: number;
+  files: VersionDiffFile[];
+}
+
 export interface SessionInfo {
   id: number;
   user_id: number;

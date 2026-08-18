@@ -3,8 +3,9 @@
     <header class="topbar">
       <div class="left">
         <button class="back" title="返回项目列表" @click="$router.push('/')">←</button>
+        <div class="brand-mark" aria-hidden="true">✦</div>
         <div>
-          <p class="eyebrow">AI · Lingma Studio</p>
+          <p class="eyebrow">LINGMA / BUILD ROOM</p>
           <h1 class="name">{{ project?.name || "生成对话" }}</h1>
         </div>
       </div>
@@ -23,7 +24,7 @@
       </div>
     </header>
 
-    <div class="split">
+    <div ref="splitRef" class="split" :style="{ gridTemplateColumns: `${chatWidth}px 10px minmax(360px, 1fr)` }">
       <aside class="chat-pane">
         <section class="panel stage-card">
           <div class="stage-head">
@@ -85,7 +86,7 @@
               <div
                 v-else-if="entry.kind === 'think'"
                 class="entry collapsible"
-                :class="{ open: !entry.collapsed, streaming: entry.streaming }"
+                :class="{ open: !entry.collapsed, streaming: entry.streaming, 'think-entry': true }"
                 role="button"
                 tabindex="0"
                 @click="toggleCollapsed(entry, $event)"
@@ -138,6 +139,15 @@
                     >
                       失败
                     </span>
+                    <button
+                      v-if="item.content"
+                      class="file-toggle mono"
+                      type="button"
+                      @click.stop="item.codeOpen = !item.codeOpen"
+                    >
+                      {{ item.codeOpen ? "收起代码" : "查看代码" }}
+                    </button>
+                    <pre v-if="item.content && item.codeOpen" class="code-preview tool-code"><code>{{ item.content }}</code></pre>
                   </div>
                   <div v-if="toolsAllDone(entry)" class="tools-done">
                     <ToolIcon name="check" /> 完成
@@ -145,10 +155,24 @@
                 </div>
               </div>
 
-              <!-- 写入文件 -->
+              <!-- 写入文件：独立代码记录，不混入工具气泡 -->
               <div v-else-if="entry.kind === 'file'" class="entry file-entry">
                 <span class="entry-icon ok"><ToolIcon name="check" /></span>
-                <span class="entry-detail mono">{{ entry.detail }}</span>
+                <div class="file-main">
+                  <div class="file-head">
+                    <span class="file-action">已写入</span>
+                    <span class="entry-detail mono">{{ entry.detail }}</span>
+                    <button
+                      v-if="entry.content"
+                      class="file-toggle mono"
+                      type="button"
+                      @click.stop="entry.codeOpen = !entry.codeOpen"
+                    >
+                      {{ entry.codeOpen ? "收起代码" : "查看代码" }}
+                    </button>
+                  </div>
+                  <pre v-if="entry.content && entry.codeOpen" class="code-preview"><code>{{ entry.content }}</code></pre>
+                </div>
               </div>
 
               <!-- 构建日志（可折叠） -->
@@ -219,6 +243,21 @@
         </section>
       </aside>
 
+      <div
+        ref="splitterRef"
+        class="splitter"
+        role="separator"
+        aria-label="调整聊天和预览宽度"
+        :aria-valuenow="chatWidth"
+        aria-valuemin="360"
+        aria-valuemax="900"
+        tabindex="0"
+        @pointerdown="startResize"
+        @keydown.left.prevent="resizeBy(-24)"
+        @keydown.right.prevent="resizeBy(24)"
+      >
+        <span class="splitter-grip" />
+      </div>
       <main class="preview-pane">
         <LivePreviewPanel
           :project-id="projectId"
@@ -226,6 +265,19 @@
           :running="!!runningGen"
           :build-attempt="runningGen?.build_attempt || 0"
           :refresh-token="previewRefresh"
+          @element-selected="onElementSelected"
+        />
+        <ModifyPanel
+          :project-id="projectId"
+          :generation-id="runningGen?.id"
+          :session-id="runningGen?.session_id"
+          :element="selectedElement"
+          @completed="onModificationCompleted"
+        />
+        <VersionHistory
+          :project-id="projectId"
+          :refresh-token="previewRefresh"
+          @rollback="onModificationCompleted"
         />
       </main>
     </div>
@@ -237,6 +289,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import LivePreviewPanel from "../components/LivePreviewPanel.vue";
+import ModifyPanel from "../components/ModifyPanel.vue";
+import VersionHistory from "../components/VersionHistory.vue";
 import MarkdownView from "../components/MarkdownView.vue";
 import StageRail from "../components/StageRail.vue";
 import ToolIcon from "../components/ToolIcon.vue";
@@ -254,6 +308,7 @@ import {
   updateProject,
 } from "../api/projects";
 import type {
+  ElementSnapshot,
   Generation,
   Message,
   Project,
@@ -280,6 +335,7 @@ interface ChatEntry {
   lines?: string[];
   collapsed?: boolean;
   streaming?: boolean;
+  codeOpen?: boolean;
   pending?: boolean;
   ok?: boolean;
   items?: Array<{
@@ -288,6 +344,8 @@ interface ChatEntry {
     pending: boolean;
     ok?: boolean;
     error?: string;
+    content?: string;
+    codeOpen?: boolean;
   }>;
 }
 
@@ -302,8 +360,14 @@ const runningGen = ref<Generation | null>(null);
 const progressStage = ref("parse");
 const submitting = ref(false);
 const previewRefresh = ref(0);
+const selectedElement = ref<ElementSnapshot | null>(null);
 const streamTick = ref(0);
 const chatListRef = ref<HTMLElement | null>(null);
+const splitRef = ref<HTMLElement | null>(null);
+const splitterRef = ref<HTMLElement | null>(null);
+const chatWidth = ref(560);
+let resizeMove: ((event: PointerEvent) => void) | null = null;
+let resizeEnd: (() => void) | null = null;
 let eventSource: EventSource | null = null;
 let seq = 0;
 let thinkBuffer = "";
@@ -332,6 +396,56 @@ watch(streamTick, scrollToBottom);
 
 function bumpStream() {
   streamTick.value += 1;
+}
+
+function resizeBy(delta: number) {
+  chatWidth.value = Math.min(900, Math.max(360, chatWidth.value + delta));
+}
+
+function onElementSelected(element: ElementSnapshot) {
+  selectedElement.value = element;
+}
+
+function onModificationCompleted() {
+  previewRefresh.value += 1;
+}
+
+function startResize(event: PointerEvent) {
+  if (window.innerWidth <= 1024 || event.button !== 0) return;
+  const splitter = splitterRef.value;
+  const split = splitRef.value;
+  if (!splitter || !split) return;
+
+  const splitRect = split.getBoundingClientRect();
+  const startX = event.clientX;
+  const startWidth = chatWidth.value;
+  const minWidth = 360;
+  const rightMinWidth = 360;
+  const dividerWidth = 10;
+  const maxWidth = Math.max(
+    minWidth,
+    splitRect.width - rightMinWidth - dividerWidth,
+  );
+
+  document.body.classList.add("is-resizing");
+  splitter.setPointerCapture?.(event.pointerId);
+  resizeMove = (moveEvent: PointerEvent) => {
+    const nextWidth = startWidth + moveEvent.clientX - startX;
+    chatWidth.value = Math.min(maxWidth, Math.max(minWidth, nextWidth));
+  };
+  const finishResize = () => {
+    document.body.classList.remove("is-resizing");
+    if (resizeMove) window.removeEventListener("pointermove", resizeMove);
+    window.removeEventListener("pointerup", finishResize);
+    window.removeEventListener("pointercancel", finishResize);
+    splitter.releasePointerCapture?.(event.pointerId);
+    resizeMove = null;
+    resizeEnd = null;
+  };
+  resizeEnd = finishResize;
+  window.addEventListener("pointermove", resizeMove);
+  window.addEventListener("pointerup", finishResize);
+  window.addEventListener("pointercancel", finishResize);
 }
 
 function lastEntry() {
@@ -592,6 +706,7 @@ function historyToEntries(history: Message[]): ChatEntry[] {
 onBeforeUnmount(() => {
   if (flushTimer !== null) clearTimeout(flushTimer);
   eventSource?.close();
+  resizeEnd?.();
 });
 
 async function submitRequirement() {
@@ -713,16 +828,31 @@ function watchGeneration(genId: number) {
   eventSource.addEventListener("file_written", (e) => {
     const event = JSON.parse((e as MessageEvent).data) as SseEvent;
     const path = String(event.path || "");
+    const content = typeof event.content === "string" ? event.content : undefined;
+    // 代码查看区只跟随当前正在写入的文件，避免连续生成多个文件时
+    // 把整个聊天栏撑成一串巨型代码卡片。
+    for (const entry of entries.value) {
+      entry.codeOpen = false;
+      entry.items?.forEach((item) => {
+        item.codeOpen = false;
+      });
+    }
     const last = lastEntry();
     if (last?.kind === "tools") {
       const items = last.items || [];
       const prevItem = items[items.length - 1];
       // 写入工具的 tool_call 已带同一 path，避免重复展示
-      if (prevItem && prevItem.tool !== "file" && prevItem.detail === path) return;
-      items.push({ tool: "file", detail: path, pending: false, ok: true });
+      if (prevItem && prevItem.tool !== "file" && prevItem.detail === path) {
+        prevItem.content = content;
+        prevItem.codeOpen = Boolean(content);
+        bumpStream();
+        return;
+      }
+      items.push({ tool: "file", detail: path, pending: false, ok: true, content, codeOpen: Boolean(content) });
     } else {
-      push({ kind: "file", detail: path });
+      push({ kind: "file", detail: path, content, codeOpen: Boolean(content) });
     }
+    bumpStream();
   });
 
   eventSource.addEventListener("build_log", (e) => {
@@ -913,7 +1043,8 @@ async function renameProject() {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(430px, 44%) 1fr;
+  grid-template-columns: 560px 10px minmax(360px, 1fr);
+  gap: 0;
 }
 .chat-pane {
   min-height: 0;
@@ -921,8 +1052,35 @@ async function renameProject() {
   flex-direction: column;
   gap: 12px;
   padding: 16px;
-  overflow-y: auto;
+  overflow: hidden;
   border-right: 1px solid var(--line);
+}
+.splitter {
+  position: relative;
+  cursor: col-resize;
+  touch-action: none;
+  background: var(--canvas-deep);
+  border-right: 1px solid var(--line);
+  border-left: 1px solid var(--line);
+  transition: background 0.15s;
+}
+.splitter:hover,
+.splitter:focus-visible {
+  background: var(--primary-soft);
+}
+.splitter-grip {
+  position: absolute;
+  left: 3px;
+  top: 50%;
+  width: 3px;
+  height: 46px;
+  transform: translateY(-50%);
+  border-radius: 99px;
+  background: var(--line-strong);
+}
+.splitter:hover .splitter-grip,
+.splitter:focus-visible .splitter-grip {
+  background: var(--primary);
 }
 .stage-card {
   padding: 14px 16px;
@@ -947,17 +1105,22 @@ async function renameProject() {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  background: #fcfbf8;
 }
 .chat-list {
   flex: 1;
   overflow-y: auto;
-  padding: 14px;
+  padding: 18px 16px 24px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 .chat-msg {
   display: flex;
+}
+.chat-msg .bubble {
+  border-radius: 10px 10px 10px 3px;
+  box-shadow: none;
 }
 .chat-msg.user {
   justify-content: flex-end;
@@ -971,6 +1134,7 @@ async function renameProject() {
   box-shadow: var(--shadow-sm);
 }
 .chat-msg.user .bubble {
+  border-radius: 10px 10px 3px 10px;
   background: var(--primary-soft);
   border-color: transparent;
 }
@@ -1025,13 +1189,29 @@ async function renameProject() {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  padding: 7px 10px;
-  border-radius: var(--radius-md);
-  background: var(--canvas);
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: var(--paper);
   border: 1px solid var(--line);
   font-size: 13px;
   line-height: 1.5;
   color: var(--ink);
+}
+.stage-entry {
+  border: none;
+  border-left: 2px solid var(--amber);
+  border-radius: 0;
+  background: transparent;
+  padding: 8px 10px;
+  color: var(--muted);
+}
+.stage-entry .entry-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+.stage-entry .entry-hint {
+  font-size: 11px;
 }
 .entry-icon {
   display: inline-flex;
@@ -1120,6 +1300,17 @@ async function renameProject() {
   padding: 10px 12px;
   margin-top: 6px;
 }
+.think-entry,
+.entry.collapsible.streaming {
+  background: #fffbf2;
+  border-color: rgba(242, 169, 59, 0.4);
+  border-left: 3px solid var(--amber);
+}
+.think-body :deep(p),
+.think-body p {
+  font-size: 12px;
+  line-height: 1.65;
+}
 .build-lines {
   flex-basis: 100%;
   max-height: 220px;
@@ -1139,6 +1330,58 @@ async function renameProject() {
 .error-entry {
   background: var(--red-soft);
   border-color: rgba(224, 91, 91, 0.35);
+}
+.file-entry {
+  align-items: flex-start;
+  background: #f4f7ff;
+  border-color: rgba(91, 103, 241, 0.24);
+  border-left: 3px solid var(--primary);
+}
+.file-main {
+  flex: 1;
+  min-width: 0;
+}
+.file-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 22px;
+}
+.file-action {
+  color: var(--primary-dark);
+  font-size: 12px;
+  font-weight: 600;
+}
+.file-toggle {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: var(--primary-dark);
+  font-size: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.file-toggle:hover {
+  text-decoration: underline;
+}
+.code-preview {
+  max-height: 172px;
+  overflow: auto;
+  margin: 9px 0 0;
+  padding: 12px;
+  border-radius: 7px;
+  background: #1f2430;
+  color: #d8e0ef;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.65;
+  white-space: pre;
+  tab-size: 2;
+}
+.tool-code {
+  flex-basis: 100%;
+  width: 100%;
+  margin-left: 21px;
 }
 .error-entry .entry-body {
   border-color: rgba(224, 91, 91, 0.25);
@@ -1169,7 +1412,7 @@ async function renameProject() {
 .preview-pane {
   min-width: 0;
   min-height: 0;
-  padding: 16px 16px 16px 0;
+  padding: 16px 16px 16px 10px;
 }
 
 /* 流式与工具状态 */
@@ -1192,6 +1435,8 @@ async function renameProject() {
 }
 .tools-entry {
   align-items: flex-start;
+  border-left: 3px solid var(--primary);
+  background: #f8f8ff;
 }
 .tools-body {
   flex: 1;
@@ -1214,7 +1459,7 @@ async function renameProject() {
   align-items: center;
   gap: 8px;
   min-width: 0;
-  padding: 5px 8px;
+  padding: 4px 8px;
   border-radius: var(--radius-sm);
   background: var(--paper);
   border: 1px solid var(--line);
@@ -1260,6 +1505,9 @@ async function renameProject() {
   .split {
     grid-template-columns: 1fr;
   }
+  .splitter {
+    display: none;
+  }
   .chat-pane {
     border-right: none;
     overflow: visible;
@@ -1268,6 +1516,264 @@ async function renameProject() {
     padding: 0 12px 16px;
     height: 56vh;
     min-height: 420px;
+  }
+}
+
+:global(body.is-resizing) {
+  cursor: col-resize;
+  user-select: none;
+}
+
+/* Build Room 视觉系统：明亮工作台 + 清晰事件层级 */
+.workspace {
+  --paper: #ffffff;
+  --canvas: #f5f7fb;
+  --canvas-deep: #edf1f7;
+  --line: #e6eaf1;
+  --line-strong: #d3dae6;
+  --ink: #20283a;
+  --muted: #718096;
+  --faint: #a4afbf;
+  --primary: #5264d8;
+  --primary-dark: #3f50c2;
+  --primary-soft: #eef0ff;
+  --amber: #d89132;
+  --amber-soft: #fff5e4;
+  --green: #2f9e78;
+  --green-soft: #e8f7f0;
+  --red: #d95f6b;
+  --red-soft: #fff0f1;
+  --warm-dark: #252b38;
+  --warm-dark-2: #323a4c;
+  --shadow-sm: 0 4px 16px rgba(35, 48, 75, 0.07);
+  --shadow-md: 0 14px 36px rgba(35, 48, 75, 0.12);
+  background: var(--canvas);
+}
+.topbar {
+  height: 76px;
+  padding: 0 24px;
+  background: rgba(255, 255, 255, 0.96);
+  border-bottom-color: var(--line);
+  box-shadow: 0 1px 0 rgba(36, 48, 73, 0.03);
+}
+.topbar .eyebrow {
+  color: var(--primary);
+  letter-spacing: 0.16em;
+  font-size: 10px;
+  margin-bottom: 4px;
+}
+.brand-mark {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  color: #ffffff;
+  font-size: 17px;
+  background: linear-gradient(135deg, #6878e8, #8f9cff);
+  border-radius: 11px;
+  box-shadow: 0 5px 14px rgba(82, 100, 216, 0.24);
+}
+.name {
+  color: var(--ink);
+  font-size: 22px;
+  line-height: 1.15;
+  letter-spacing: -0.035em;
+}
+.back,
+.ghost {
+  background: var(--paper);
+  border-color: var(--line);
+  color: var(--muted);
+}
+.back:hover,
+.ghost:hover {
+  color: var(--ink);
+  border-color: rgba(139, 155, 255, 0.65);
+  background: var(--primary-soft);
+}
+.state {
+  background: rgba(255, 255, 255, 0.035);
+  border-color: var(--line);
+}
+.split {
+  padding: 18px 20px 20px;
+}
+.chat-pane {
+  padding: 0 16px 0 0;
+  border-right: 0;
+}
+.stage-card,
+.chat-card,
+.preview-panel {
+  border-color: var(--line);
+  box-shadow: var(--shadow-sm);
+}
+.stage-card {
+  background: var(--paper);
+  padding: 18px 20px 16px;
+}
+.stage-head .panel-title {
+  color: var(--ink);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  font-weight: 600;
+}
+.stage-meta {
+  color: var(--faint);
+}
+.chat-card {
+  background: var(--paper);
+  border-radius: 18px;
+}
+.chat-list {
+  padding: 20px 18px 26px;
+}
+.chat-msg .bubble {
+  background: #f8f9fc;
+  border-color: var(--line);
+}
+.chat-msg.user .bubble {
+  background: var(--primary-soft);
+  border-color: #dce1ff;
+}
+.who {
+  color: var(--faint);
+}
+.chat-msg.user .who {
+  color: var(--primary-dark);
+}
+.bubble p,
+.entry-body,
+.entry-title {
+  color: var(--ink);
+}
+.bubble p {
+  font-size: 14px;
+  line-height: 1.72;
+}
+.entry-title {
+  font-size: 13px;
+  font-weight: 650;
+}
+.entry-detail,
+.entry-hint,
+.tool-name {
+  font-size: 11px;
+  line-height: 1.55;
+}
+.empty-tip {
+  color: var(--muted);
+}
+.example {
+  color: var(--primary-dark);
+  background: var(--primary-soft);
+}
+.entry {
+  background: #fbfcfe;
+  border-color: var(--line);
+}
+.stage-entry {
+  border-left-color: var(--green);
+  color: var(--muted);
+}
+.stage-dot {
+  background: var(--green);
+  box-shadow: 0 0 0 3px var(--green-soft), 0 0 14px rgba(91, 224, 173, 0.45);
+}
+.think-entry,
+.entry.collapsible.streaming {
+  background: #fffaf1;
+  border-color: rgba(255, 184, 102, 0.28);
+}
+.think-body,
+.entry-body {
+  background: #ffffff;
+  border-color: var(--line);
+  color: var(--ink);
+}
+.tools-entry {
+  background: #f7f8ff;
+  border-left-color: var(--primary);
+}
+.tool-item,
+.file-entry {
+  background: #ffffff;
+  border-color: var(--line);
+}
+.tool-item.pending {
+  background: var(--amber-soft);
+  border-color: rgba(255, 184, 102, 0.35);
+}
+.file-entry {
+  background: rgba(91, 224, 173, 0.07);
+  border-left-color: var(--green);
+}
+.file-action,
+.tool-name {
+  color: var(--primary-dark);
+}
+.entry-detail,
+.entry-hint {
+  color: var(--muted);
+}
+.input-row {
+  padding: 14px 16px 16px;
+  background: #ffffff;
+  border-top-color: var(--line);
+}
+.input-row :deep(.el-textarea__inner) {
+  color: var(--ink);
+  background: #f8f9fc;
+  border-color: var(--line-strong);
+  box-shadow: none;
+}
+.input-row :deep(.el-textarea__inner::placeholder) {
+  color: var(--faint);
+}
+.input-row :deep(.el-textarea__inner:focus) {
+  border-color: rgba(139, 155, 255, 0.8);
+  box-shadow: 0 0 0 3px rgba(139, 155, 255, 0.12);
+}
+.input-side :deep(.el-button--primary) {
+  border: 0;
+  background: linear-gradient(135deg, #8797ff, #5d6ef1);
+  box-shadow: 0 8px 24px rgba(93, 110, 241, 0.3);
+}
+.preview-pane {
+  padding: 0 0 0 12px;
+}
+.preview-panel {
+  background: #f7f8fc;
+  border-radius: 18px;
+}
+.splitter {
+  background: transparent;
+  border-color: transparent;
+}
+.splitter-grip {
+  width: 4px;
+  background: rgba(139, 155, 255, 0.4);
+  box-shadow: 0 0 16px rgba(139, 155, 255, 0.25);
+}
+.splitter:hover,
+.splitter:focus-visible {
+  background: rgba(139, 155, 255, 0.08);
+}
+.build-lines,
+.code-preview {
+  background: #070c16;
+  border: 1px solid rgba(158, 177, 220, 0.15);
+}
+
+@media (max-width: 1024px) {
+  .split {
+    padding: 12px;
+  }
+  .chat-pane {
+    padding-right: 0;
+  }
+  .preview-pane {
+    padding: 12px 0 0;
   }
 }
 </style>
