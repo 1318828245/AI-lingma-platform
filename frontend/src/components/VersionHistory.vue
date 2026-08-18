@@ -1,5 +1,5 @@
 <template>
-  <section class="version-panel">
+  <section class="version-panel" :class="{ floating }">
     <div class="version-head">
       <div>
         <p class="eyebrow mono">M2 / VERSION CONTROL</p>
@@ -47,7 +47,7 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { getProjectVersionDiff, listProjectVersions, rollbackProjectVersion } from "../api/versions";
 import type { ProjectVersion, VersionDiff } from "../types";
 
-const props = withDefaults(defineProps<{ projectId: number; refreshToken?: number }>(), { refreshToken: 0 });
+const props = withDefaults(defineProps<{ projectId: number; refreshToken?: number; floating?: boolean }>(), { refreshToken: 0, floating: false });
 const emit = defineEmits<{ (event: "rollback"): void }>();
 const versions = ref<ProjectVersion[]>([]);
 const loading = ref(false);

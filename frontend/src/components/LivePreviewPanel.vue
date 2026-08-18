@@ -57,6 +57,7 @@
         </p>
         <p class="muted">在左侧描述需求，完成后预览会自动亮起来</p>
       </div>
+      <slot name="overlay" :style="selectionPopupStyle" />
     </div>
     <div v-if="pickerEnabled" class="picker-tip">
       点选预览中的元素，左侧修改面板会显示元素信息和修改输入框。按按钮可退出点选。
@@ -90,12 +91,14 @@ const props = withDefaults(
   running?: boolean;
   buildAttempt?: number;
   refreshToken?: number;
+  selectedElement?: ElementSnapshot | null;
 }>(),
   {
     stage: "idle",
     running: false,
     buildAttempt: 0,
     refreshToken: 0,
+    selectedElement: null,
   }
 );
 
@@ -124,6 +127,21 @@ const frameSrc = computed(
   () =>
     `/preview/${props.projectId}/?t=${frameKey.value}`
 );
+const selectionPopupStyle = computed(() => {
+  const selected = props.selectedElement;
+  const frame = frameRef.value;
+  const canvas = frame?.parentElement;
+  if (!selected || !frame || !canvas) return { display: "none" };
+  const frameRect = frame.getBoundingClientRect();
+  const canvasRect = canvas.getBoundingClientRect();
+  const elementRect = selected.rect;
+  const popupWidth = 350;
+  const rawLeft = frameRect.left - canvasRect.left + elementRect.x + elementRect.width + 14;
+  const maxLeft = canvasRect.width - popupWidth - 12;
+  const left = Math.max(12, Math.min(rawLeft, maxLeft));
+  const top = Math.max(12, frameRect.top - canvasRect.top + elementRect.y - 8);
+  return { left: `${left}px`, top: `${top}px` };
+});
 const previewUrl = computed(
   () => `/preview/${props.projectId}/ · ${previewStatus.value?.mode ?? "…"}`
 );
@@ -381,6 +399,7 @@ watch(
   cursor: not-allowed;
 }
 .canvas {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: flex;

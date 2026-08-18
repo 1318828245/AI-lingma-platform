@@ -265,16 +265,34 @@
           :running="!!runningGen"
           :build-attempt="runningGen?.build_attempt || 0"
           :refresh-token="previewRefresh"
+          :selected-element="selectedElement"
           @element-selected="onElementSelected"
-        />
-        <ModifyPanel
-          :project-id="projectId"
-          :generation-id="runningGen?.id"
-          :session-id="runningGen?.session_id"
-          :element="selectedElement"
-          @completed="onModificationCompleted"
-        />
+        >
+          <template #overlay="{ style }">
+            <div v-if="selectedElement" class="element-popover" :style="style">
+              <ModifyPanel
+                :project-id="projectId"
+                :generation-id="runningGen?.id"
+                :session-id="runningGen?.session_id"
+                :element="selectedElement"
+                @completed="onModificationCompleted"
+              />
+            </div>
+          </template>
+        </LivePreviewPanel>
+        <button
+          class="version-fab"
+          :class="{ active: versionsOpen }"
+          title="打开版本历史"
+          @click="versionsOpen = !versionsOpen"
+        >
+          <span class="version-fab-mark">◷</span>
+          <span>版本</span>
+        </button>
         <VersionHistory
+          v-if="versionsOpen"
+          class="floating-version-history"
+          :floating="true"
           :project-id="projectId"
           :refresh-token="previewRefresh"
           @rollback="onModificationCompleted"
@@ -361,6 +379,7 @@ const progressStage = ref("parse");
 const submitting = ref(false);
 const previewRefresh = ref(0);
 const selectedElement = ref<ElementSnapshot | null>(null);
+const versionsOpen = ref(false);
 const streamTick = ref(0);
 const chatListRef = ref<HTMLElement | null>(null);
 const splitRef = ref<HTMLElement | null>(null);
@@ -1410,9 +1429,78 @@ async function renameProject() {
   text-align: center;
 }
 .preview-pane {
+  position: relative;
   min-width: 0;
   min-height: 0;
   padding: 16px 16px 16px 10px;
+}
+
+.element-popover {
+  position: absolute;
+  z-index: 20;
+  width: min(350px, calc(100% - 24px));
+  filter: drop-shadow(0 16px 28px rgba(35, 48, 75, 0.2));
+  animation: popover-in 0.16s ease-out;
+}
+.element-popover::before {
+  content: "";
+  position: absolute;
+  top: 24px;
+  left: -7px;
+  width: 14px;
+  height: 14px;
+  background: #fff;
+  border-left: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  transform: rotate(45deg);
+  z-index: -1;
+}
+.element-popover :deep(.modify-panel) {
+  margin: 0;
+  border-color: rgba(82, 100, 216, 0.24);
+}
+.version-fab {
+  position: absolute;
+  right: 22px;
+  bottom: 20px;
+  z-index: 25;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 13px 9px 10px;
+  border: 1px solid rgba(82, 100, 216, 0.25);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.94);
+  color: var(--primary-dark);
+  box-shadow: 0 10px 24px rgba(35, 48, 75, 0.16);
+  backdrop-filter: blur(10px);
+  cursor: pointer;
+  font-size: 12px;
+  transition: transform 0.16s, box-shadow 0.16s, background 0.16s;
+}
+.version-fab:hover,
+.version-fab.active {
+  transform: translateY(-2px);
+  background: var(--primary);
+  color: #fff;
+  box-shadow: 0 14px 30px rgba(82, 100, 216, 0.28);
+}
+.version-fab-mark { font-size: 18px; line-height: 1; }
+.floating-version-history {
+  position: absolute;
+  right: 18px;
+  bottom: 68px;
+  z-index: 24;
+  width: min(430px, calc(100% - 36px));
+  max-height: min(70vh, 620px);
+  overflow: auto;
+  margin: 0;
+  box-shadow: 0 18px 44px rgba(35, 48, 75, 0.22);
+  animation: popover-in 0.16s ease-out;
+}
+@keyframes popover-in {
+  from { opacity: 0; transform: translateY(5px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 /* 流式与工具状态 */
@@ -1517,6 +1605,8 @@ async function renameProject() {
     height: 56vh;
     min-height: 420px;
   }
+  .version-fab { right: 16px; bottom: 18px; }
+  .floating-version-history { right: 12px; bottom: 66px; width: calc(100% - 24px); }
 }
 
 :global(body.is-resizing) {
