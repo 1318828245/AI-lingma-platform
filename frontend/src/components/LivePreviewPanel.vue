@@ -167,12 +167,13 @@ function reload() {
 }
 
 function selectorFor(element: Element): string {
-  if (element instanceof HTMLElement && element.id) return `#${CSS.escape(element.id)}`;
+  const htmlElement = element as HTMLElement;
+  if (htmlElement.id) return `#${CSS.escape(htmlElement.id)}`;
   const parts: string[] = [];
   let current: Element | null = element;
   while (current && current.nodeType === 1 && parts.length < 6) {
     let part = current.tagName.toLowerCase();
-    if (current instanceof HTMLElement && current.classList.length) {
+    if (current.classList.length) {
       part += `.${Array.from(current.classList).slice(0, 2).map((name) => CSS.escape(name)).join(".")}`;
     }
     const parent: HTMLElement | null = current.parentElement;
@@ -189,11 +190,12 @@ function selectorFor(element: Element): string {
 function snapshotElement(element: Element): ElementSnapshot {
   const html = element.outerHTML.slice(0, 2000);
   const rect = element.getBoundingClientRect();
+  const htmlElement = element as HTMLElement;
   return {
     tag: element.tagName.toLowerCase(),
     text: (element.textContent || "").trim().replace(/\s+/g, " ").slice(0, 500),
-    id: element instanceof HTMLElement ? element.id : "",
-    className: element instanceof HTMLElement ? element.className : "",
+    id: htmlElement.id || "",
+    className: typeof htmlElement.className === "string" ? htmlElement.className : "",
     selector: selectorFor(element),
     html,
     rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
@@ -218,22 +220,24 @@ function installPicker() {
   };
   const onMove = (event: MouseEvent) => {
     const target = event.target;
-    if (!(target instanceof HTMLElement) || target === doc.body || target === doc.documentElement) return;
-    if (hovered !== target) {
+    if (!target || (target as Node).nodeType !== 1 || target === doc.body || target === doc.documentElement) return;
+    const element = target as HTMLElement;
+    if (hovered !== element) {
       if (hovered !== selected) clearOutline(hovered);
-      hovered = target;
+      hovered = element;
       outline(hovered, "#5264d8");
     }
   };
   const onClick = (event: MouseEvent) => {
     const target = event.target;
-    if (!(target instanceof HTMLElement) || target === doc.body || target === doc.documentElement) return;
+    if (!target || (target as Node).nodeType !== 1 || target === doc.body || target === doc.documentElement) return;
+    const element = target as HTMLElement;
     event.preventDefault();
     event.stopPropagation();
-    if (selected && selected !== target) clearOutline(selected);
-    selected = target;
+    if (selected && selected !== element) clearOutline(selected);
+    selected = element;
     outline(selected, "#d89132");
-    emit("element-selected", snapshotElement(target));
+    emit("element-selected", snapshotElement(element));
   };
   doc.addEventListener("mousemove", onMove, true);
   doc.addEventListener("click", onClick, true);
