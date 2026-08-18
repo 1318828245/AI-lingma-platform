@@ -57,7 +57,11 @@
         </p>
         <p class="muted">在左侧描述需求，完成后预览会自动亮起来</p>
       </div>
-      <slot name="overlay" :style="selectionPopupStyle" />
+      <slot
+        name="overlay"
+        :style="selectionPopupStyle.style"
+        :placement="selectionPopupStyle.placement"
+      />
     </div>
     <div v-if="pickerEnabled" class="picker-tip">
       点选预览中的元素，左侧修改面板会显示元素信息和修改输入框。按按钮可退出点选。
@@ -131,16 +135,64 @@ const selectionPopupStyle = computed(() => {
   const selected = props.selectedElement;
   const frame = frameRef.value;
   const canvas = frame?.parentElement;
-  if (!selected || !frame || !canvas) return { display: "none" };
+  if (!selected || !frame || !canvas) {
+    return { style: { display: "none" }, placement: "right" as const };
+  }
   const frameRect = frame.getBoundingClientRect();
   const canvasRect = canvas.getBoundingClientRect();
   const elementRect = selected.rect;
-  const popupWidth = 350;
-  const rawLeft = frameRect.left - canvasRect.left + elementRect.x + elementRect.width + 14;
-  const maxLeft = canvasRect.width - popupWidth - 12;
-  const left = Math.max(12, Math.min(rawLeft, maxLeft));
-  const top = Math.max(12, frameRect.top - canvasRect.top + elementRect.y - 8);
-  return { left: `${left}px`, top: `${top}px` };
+  const edge = 12;
+  const gap = 14;
+  const popupWidth = Math.min(350, Math.max(0, canvasRect.width - edge * 2));
+  // The panel is content-sized, so use a conservative height for direction
+  // selection and cap the actual panel height in GenerationChatView.
+  const popupHeight = Math.min(320, Math.max(0, canvasRect.height - edge * 2));
+  const anchor = {
+    left: frameRect.left - canvasRect.left + elementRect.x,
+    top: frameRect.top - canvasRect.top + elementRect.y,
+  };
+  anchor.left = Math.max(edge, Math.min(anchor.left, canvasRect.width - edge));
+  anchor.top = Math.max(edge, Math.min(anchor.top, canvasRect.height - edge));
+  const anchorRight = anchor.left + elementRect.width;
+  const anchorBottom = anchor.top + elementRect.height;
+  const spaces = {
+    right: canvasRect.width - anchorRight - gap - edge,
+    left: anchor.left - gap - edge,
+    bottom: canvasRect.height - anchorBottom - gap - edge,
+    top: anchor.top - gap - edge,
+  };
+  const preferred = ["right", "left", "bottom", "top"] as const;
+  const placement = preferred.find((side) =>
+    side === "right" || side === "left"
+      ? spaces[side] >= popupWidth
+      : spaces[side] >= popupHeight
+  ) ?? preferred.reduce((best, side) =>
+    spaces[side] > spaces[best] ? side : best
+  );
+
+  let left = anchor.left;
+  let top = anchor.top;
+  if (placement === "right") {
+    left = anchorRight + gap;
+    top = anchor.top + elementRect.height / 2 - popupHeight / 2;
+  } else if (placement === "left") {
+    left = anchor.left - popupWidth - gap;
+    top = anchor.top + elementRect.height / 2 - popupHeight / 2;
+  } else if (placement === "bottom") {
+    left = anchor.left + elementRect.width / 2 - popupWidth / 2;
+    top = anchorBottom + gap;
+  } else {
+    left = anchor.left + elementRect.width / 2 - popupWidth / 2;
+    top = anchor.top - popupHeight - gap;
+  }
+  const maxLeft = Math.max(edge, canvasRect.width - popupWidth - edge);
+  const maxTop = Math.max(edge, canvasRect.height - popupHeight - edge);
+  left = Math.max(edge, Math.min(left, maxLeft));
+  top = Math.max(edge, Math.min(top, maxTop));
+  return {
+    style: { left: `${left}px`, top: `${top}px`, width: `${popupWidth}px` },
+    placement,
+  };
 });
 const previewUrl = computed(
   () => `/preview/${props.projectId}/ · ${previewStatus.value?.mode ?? "…"}`

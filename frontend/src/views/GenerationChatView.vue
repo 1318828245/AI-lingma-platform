@@ -268,8 +268,13 @@
           :selected-element="selectedElement"
           @element-selected="onElementSelected"
         >
-          <template #overlay="{ style }">
-            <div v-if="selectedElement" class="element-popover" :style="style">
+          <template #overlay="{ style, placement }">
+            <div
+              v-if="selectedElement"
+              class="element-popover"
+              :class="`placement-${placement}`"
+              :style="style"
+            >
               <ModifyPanel
                 :project-id="projectId"
                 :generation-id="runningGen?.id"
@@ -1438,22 +1443,50 @@ async function renameProject() {
 .element-popover {
   position: absolute;
   z-index: 20;
-  width: min(350px, calc(100% - 24px));
+  max-height: calc(100% - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   filter: drop-shadow(0 16px 28px rgba(35, 48, 75, 0.2));
   animation: popover-in 0.16s ease-out;
 }
 .element-popover::before {
   content: "";
   position: absolute;
-  top: 24px;
+  width: 0;
+  height: 0;
+  z-index: 1;
+}
+.element-popover.placement-right::before {
+  top: 50%;
   left: -7px;
-  width: 14px;
-  height: 14px;
-  background: #fff;
-  border-left: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-  transform: rotate(45deg);
-  z-index: -1;
+  border-top: 7px solid transparent;
+  border-bottom: 7px solid transparent;
+  border-right: 7px solid #fff;
+  transform: translateY(-50%);
+}
+.element-popover.placement-left::before {
+  top: 50%;
+  right: -7px;
+  border-top: 7px solid transparent;
+  border-bottom: 7px solid transparent;
+  border-left: 7px solid #fff;
+  transform: translateY(-50%);
+}
+.element-popover.placement-bottom::before {
+  top: -7px;
+  left: 50%;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-bottom: 7px solid #fff;
+  transform: translateX(-50%);
+}
+.element-popover.placement-top::before {
+  bottom: -7px;
+  left: 50%;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-top: 7px solid #fff;
+  transform: translateX(-50%);
 }
 .element-popover :deep(.modify-panel) {
   margin: 0;
