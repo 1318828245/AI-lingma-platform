@@ -86,6 +86,7 @@ import type { ElementSnapshot, PreviewStatus } from "../types";
 
 const emit = defineEmits<{
   (event: "element-selected", snapshot: ElementSnapshot): void;
+  (event: "picker-toggled", enabled: boolean): void;
 }>();
 
 const props = withDefaults(
@@ -322,6 +323,7 @@ function installPicker() {
 function togglePicker() {
   pickerEnabled.value = !pickerEnabled.value;
   installPicker();
+  emit("picker-toggled", pickerEnabled.value);
 }
 
 function onFrameLoad() {

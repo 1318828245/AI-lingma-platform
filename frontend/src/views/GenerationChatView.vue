@@ -267,6 +267,7 @@
           :refresh-token="previewRefresh"
           :selected-element="selectedElement"
           @element-selected="onElementSelected"
+          @picker-toggled="onPickerToggled"
         >
           <template #overlay="{ style, placement }">
             <div
@@ -428,6 +429,10 @@ function resizeBy(delta: number) {
 
 function onElementSelected(element: ElementSnapshot) {
   selectedElement.value = element;
+}
+
+function onPickerToggled(enabled: boolean) {
+  if (!enabled) selectedElement.value = null;
 }
 
 function onModificationCompleted() {
