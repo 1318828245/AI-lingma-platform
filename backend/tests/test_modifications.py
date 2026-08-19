@@ -45,7 +45,7 @@ def test_modification_text_edit_diff_and_version(client, admin_headers):
     assert "旧标题" in status["diff_json"]["files"][0]["diff"]
 
     with SessionLocal() as db:
-        from app.core.config import get_settings
+        from app.services.project import project_workspace
 
-        workspace = get_settings().workspace_dir / str(project_id)
+        workspace = project_workspace(project_id)
         assert "新标题" in (workspace / "index.html").read_text(encoding="utf-8")

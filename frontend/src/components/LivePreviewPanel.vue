@@ -42,11 +42,21 @@
         title="项目实时预览"
         @load="onFrameLoad"
       />
-      <div v-else-if="loading" class="empty">
+      <div v-if="running" class="preview-state generating" role="status">
+        <span class="spinner" />
+        <p class="empty-title">正在生成预览</p>
+        <p class="muted">页面代码与构建产物完成后会自动刷新</p>
+      </div>
+      <div v-else-if="!ready && error" class="empty error-state">
+        <p class="empty-icon" aria-hidden="true">!</p>
+        <p class="empty-title">预览暂不可用</p>
+        <p class="muted">{{ error }}</p>
+      </div>
+      <div v-else-if="!ready && loading" class="empty">
         <span class="spinner" />
         <p class="muted">正在查看预览状态…</p>
       </div>
-      <div v-else class="empty">
+      <div v-else-if="!ready" class="empty">
         <p class="empty-icon" aria-hidden="true">✦</p>
         <p class="empty-title">
           {{
@@ -94,6 +104,7 @@ const props = withDefaults(
   projectId: number;
   stage?: string;
   running?: boolean;
+  error?: string;
   buildAttempt?: number;
   refreshToken?: number;
   selectedElement?: ElementSnapshot | null;
@@ -101,6 +112,7 @@ const props = withDefaults(
   {
     stage: "idle",
     running: false,
+    error: "",
     buildAttempt: 0,
     refreshToken: 0,
     selectedElement: null,
@@ -200,12 +212,16 @@ const previewUrl = computed(
 );
 
 const statusLabel = computed(() => {
+  if (props.error) return "预览失败";
+  if (props.running) return "生成中";
   if (loading.value) return "检测中";
   if (previewStatus.value?.status === "ready") return "可预览";
   if (previewStatus.value?.status === "not_generated") return "未生成";
   return "空项目";
 });
 const statusClass = computed(() => {
+  if (props.error) return "error";
+  if (props.running) return "warn";
   if (previewStatus.value?.status === "ready") return "ok";
   if (previewStatus.value?.status === "not_generated") return "warn";
   return "";
@@ -481,6 +497,41 @@ watch(
   background: var(--paper);
   box-shadow: 0 8px 28px rgba(60, 52, 42, 0.18);
   transition: width 0.2s ease;
+}
+.preview-state {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 20px;
+  text-align: center;
+  background: color-mix(in srgb, var(--canvas-deep) 74%, transparent);
+}
+.preview-state.generating {
+  backdrop-filter: blur(2px);
+}
+.error-state {
+  color: #a13a3a;
+}
+.error-state .empty-icon {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(224, 91, 91, .4);
+  border-radius: 50%;
+  background: var(--red-soft);
+  color: var(--red);
+  font-weight: 700;
+}
+.chip.error {
+  color: var(--red);
+  border-color: rgba(224, 91, 91, .35);
+  background: var(--red-soft);
 }
 .empty {
   height: 100%;

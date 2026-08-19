@@ -178,7 +178,7 @@ async def run_generation_task(generation_id: int) -> None:
                 "project_id": gen.project_id,
                 "session_id": gen.session_id,
                 "user_id": session.user_id if session else 0,
-                "workspace": str(project_workspace(gen.project_id)),
+                "workspace": str(project_workspace(project)),
                 "requirement": gen.requirement,
                 "tech_stack": project.tech_stack if project else "html",
                 "llm_model": gen.llm_model or get_settings().llm_model,

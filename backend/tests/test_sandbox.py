@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from app.services.sandbox import BuildError, run_command
+from app.services.sandbox import BuildError, _is_vite_project, _real_build, run_command
 
 
 def test_run_command_npm_version():
@@ -170,3 +170,31 @@ def test_node_command_falls_back_when_async_subprocess_is_unavailable(tmp_path, 
     )
     assert code == 0
     assert "fallback ok" in output
+
+
+def test_vite_project_is_detected_for_relative_preview_assets(tmp_path):
+    (tmp_path / "package.json").write_text(
+        '{"scripts":{"build":"vite build"},"devDependencies":{"vite":"^5"}}',
+        encoding="utf-8",
+    )
+    assert _is_vite_project(tmp_path)
+
+
+def test_real_vite_build_uses_relative_asset_base(tmp_path, monkeypatch):
+    import app.services.sandbox as sandbox
+
+    (tmp_path / "package.json").write_text(
+        '{"scripts":{"build":"vite build"},"devDependencies":{"vite":"^5"}}',
+        encoding="utf-8",
+    )
+    (tmp_path / "node_modules").mkdir()
+    calls = []
+
+    async def fake_run(command, cwd, timeout=300):
+        calls.append(command)
+        return 0, "build ok\n"
+
+    monkeypatch.setattr(sandbox, "run_command", fake_run)
+    ok, _, errors = asyncio.run(_real_build(tmp_path, emit=None))
+    assert ok and not errors
+    assert calls == [["npm", "run", "build", "--", "--base=./"]]

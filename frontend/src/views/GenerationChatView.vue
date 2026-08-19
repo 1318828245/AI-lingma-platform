@@ -44,6 +44,11 @@
         </section>
 
         <section class="panel chat-card">
+          <div v-if="generationWaitingText" class="generation-status-beacon" role="status">
+            <span class="generation-status-spinner" aria-hidden="true" />
+            <span class="generation-status-copy">{{ generationWaitingText }}</span>
+            <span class="generation-status-dots" aria-hidden="true"><i /><i /><i /></span>
+          </div>
           <div ref="chatListRef" class="chat-list">
             <div v-if="!entries.length" class="empty-tip">
               <p class="empty-mark" aria-hidden="true">✦</p>
@@ -262,7 +267,8 @@
         <LivePreviewPanel
           :project-id="projectId"
           :stage="progressStage"
-          :running="!!runningGen"
+          :running="generationActive"
+          :error="previewError"
           :build-attempt="runningGen?.build_attempt || 0"
           :refresh-token="previewRefresh"
           :selected-element="selectedElement"
@@ -318,7 +324,6 @@ import VersionHistory from "../components/VersionHistory.vue";
 import MarkdownView from "../components/MarkdownView.vue";
 import StageRail from "../components/StageRail.vue";
 import ToolIcon from "../components/ToolIcon.vue";
-import { stageInfo } from "../constants/stages";
 import {
   cancelGeneration,
   createGeneration,
@@ -381,10 +386,24 @@ const project = ref<Project | null>(null);
 const requirement = ref("");
 const entries = ref<ChatEntry[]>([]);
 const runningGen = ref<Generation | null>(null);
-const progressStage = ref("parse");
+// 未运行任务时不高亮任一阶段；避免重新进入已完成项目后误显示“解析中”。
+const progressStage = ref("idle");
 const submitting = ref(false);
 const previewRefresh = ref(0);
+const previewError = ref("");
+const generationActive = ref(false);
 const selectedElement = ref<ElementSnapshot | null>(null);
+const generationWaitingText = computed(() => {
+  if (!generationActive.value) return "";
+  const labels: Record<string, string> = {
+    parse: "正在整理实施方案",
+    plan: "正在整理实施方案",
+    generate: "正在编写页面代码",
+    build: "正在安装依赖并构建预览",
+    repair: "正在根据构建结果修复代码",
+  };
+  return labels[progressStage.value] || "正在整理实施方案";
+});
 const versionsOpen = ref(false);
 const streamTick = ref(0);
 const chatListRef = ref<HTMLElement | null>(null);
@@ -656,14 +675,7 @@ function historyToEntries(history: Message[]): ChatEntry[] {
     }
     if (m.msg_type === "stage") {
       currentTools = null;
-      const info = stageInfo(m.content);
-      list.push({
-        id: ++seq,
-        kind: "stage",
-        stageTitle: info.title,
-        stageHint: info.hint,
-        collapsed: false,
-      });
+      // 阶段进度仅在任务执行时显示为居中状态牌，不再回放为聊天消息。
       continue;
     }
     if (m.msg_type === "think") {
@@ -750,7 +762,9 @@ async function submitRequirement() {
     const gen = await createGeneration(projectId, text);
     requirement.value = "";
     runningGen.value = gen;
-    progressStage.value = "parse";
+    generationActive.value = true;
+    previewError.value = "";
+    progressStage.value = "plan";
     previewRefresh.value += 1;
     watchGeneration(gen.id);
   } catch (error: any) {
@@ -768,12 +782,6 @@ function watchGeneration(genId: number) {
     const event = JSON.parse((e as MessageEvent).data) as SseEvent;
     const stage = String(event.stage);
     progressStage.value = stage;
-    const info = stageInfo(stage);
-    push({
-      kind: "stage",
-      stageTitle: info.title,
-      stageHint: info.hint,
-    });
     if (stage === "build") {
       push({ kind: "build", lines: [] });
     }
@@ -910,6 +918,8 @@ function watchGeneration(genId: number) {
       push({ kind: "assistant", content: summary, collapsed: false });
     }
     clearAllStreaming();
+    generationActive.value = false;
+    previewError.value = "";
     progressStage.value = "done";
     eventSource?.close();
     previewRefresh.value += 1;
@@ -919,7 +929,10 @@ function watchGeneration(genId: number) {
   eventSource.addEventListener("error", (e) => {
     endStreaming();
     const event = JSON.parse((e as MessageEvent).data) as SseEvent;
-    push({ kind: "error", content: String(event.error || "任务失败了") });
+    const error = String(event.error || "任务失败了");
+    push({ kind: "error", content: error });
+    generationActive.value = false;
+    previewError.value = error;
     progressStage.value = "done";
     eventSource?.close();
     refreshStatus();
@@ -928,6 +941,7 @@ function watchGeneration(genId: number) {
   eventSource.addEventListener("cancelled", () => {
     endStreaming();
     push({ kind: "info", content: "已取消这次生成" });
+    generationActive.value = false;
     progressStage.value = "done";
     eventSource?.close();
     refreshStatus();
@@ -944,6 +958,9 @@ async function refreshStatus(genId?: number) {
   if (!id) return;
   const gen = await getGeneration(id);
   runningGen.value = gen;
+  if (["succeeded", "failed", "cancelled", "timed_out"].includes(gen.status)) {
+    generationActive.value = false;
+  }
   if (["succeeded", "failed", "cancelled", "timed_out"].includes(gen.status)) {
     eventSource?.close();
   }
@@ -1130,11 +1147,61 @@ async function renameProject() {
 }
 .chat-card {
   flex: 1;
+  position: relative;
   min-height: 260px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   background: #fcfbf8;
+}
+.generation-status-beacon {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  margin: 10px 14px 0;
+  padding: 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--green) 38%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--green-soft) 88%, var(--paper));
+  color: var(--ink);
+  box-shadow: 0 4px 12px rgb(20 51 43 / 8%);
+}
+.generation-status-copy {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+.generation-status-spinner {
+  width: 15px;
+  height: 15px;
+  border: 2px solid color-mix(in srgb, var(--green) 26%, transparent);
+  border-top-color: var(--green);
+  border-radius: 50%;
+  animation: generation-spin .8s linear infinite;
+}
+.generation-status-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+.generation-status-dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--green);
+  animation: generation-dot 1.1s ease-in-out infinite;
+}
+.generation-status-dots i:nth-child(2) { animation-delay: .14s; }
+.generation-status-dots i:nth-child(3) { animation-delay: .28s; }
+@keyframes generation-dot {
+  0%, 70%, 100% { opacity: .28; transform: translateY(0); }
+  35% { opacity: 1; transform: translateY(-2px); }
+}
+@keyframes generation-spin {
+  to { transform: rotate(360deg); }
 }
 .chat-list {
   flex: 1;

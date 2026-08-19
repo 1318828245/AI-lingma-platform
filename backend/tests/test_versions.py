@@ -45,6 +45,8 @@ def test_project_version_list_diff_and_rollback(client, admin_headers):
     with SessionLocal() as db:
         from app.core.config import get_settings
 
-        workspace = get_settings().workspace_dir / str(project_id)
+        from app.services.project import project_workspace
+
+        workspace = project_workspace(project_id)
         assert (workspace / "index.html").read_text(encoding="utf-8") == "<h1>第一版</h1>"
         assert not (workspace / "extra.txt").exists()

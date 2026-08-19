@@ -87,8 +87,9 @@ TOOL_SCHEMAS = [
         "type": "function",
         "function": {
             "name": "run_command",
-            "description": "在项目目录执行命令，等同本机终端（支持 &&、管道、引号等 Shell 语法）；"
-            "建议直接传完整命令字符串，例如 \"npm run build && node -e '...'\"",
+            "description": "在 Windows 项目目录执行前台校验命令。Vue/Vite 项目只可使用 npm install、"
+            "npm run build 或 node --check；平台会托管 dist 预览，禁止 npm run dev、timeout、sleep、"
+            "后台运行符号(&)、重定向(>)、/tmp 与 Linux shell 管道命令。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -199,6 +200,15 @@ async def _execute_tool(state: GenerationState, name: str, args: dict) -> str:
             command = shlex.split(command)
         if not command:
             return json.dumps({"error": "command 不能为空"}, ensure_ascii=False)
+        command_text = command if isinstance(command, str) else " ".join(command)
+        if _is_unsupported_preview_command(command_text):
+            return json.dumps(
+                {
+                    "error": "平台预览不需要启动开发服务器。请改用 npm run build；"
+                    "不要使用 timeout、sleep、后台符号、重定向或 /tmp。"
+                },
+                ensure_ascii=False,
+            )
         try:
             code, output = await run_command(command, workspace, timeout=180)
         except BuildError as exc:
@@ -404,6 +414,18 @@ def _safe_tool_args(name: str, args: dict) -> dict:
     if name == "run_command":
         return {"command": args.get("command") or []}
     return {}
+
+
+def _is_unsupported_preview_command(command: str) -> bool:
+    lowered = command.lower()
+    return (
+        "npm run dev" in lowered
+        or "timeout " in lowered
+        or "sleep " in lowered
+        or "/tmp/" in lowered
+        or ">" in command
+        or (" &" in command and "&&" not in command)
+    )
 
 
 def _tool_result_detail(name: str, args: dict) -> str:

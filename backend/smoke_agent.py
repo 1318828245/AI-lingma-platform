@@ -48,7 +48,9 @@ def main() -> None:
         print("build_attempt:", current["build_attempt"], flush=True)
         print("error:", current["error"], flush=True)
 
-        ws = get_settings().workspace_dir / str(project["id"])
+        from app.services.project import project_workspace
+
+        ws = project_workspace(project["id"])
         files = sorted(p.relative_to(ws).as_posix() for p in ws.rglob("*") if p.is_file())
         print("files:", files, flush=True)
         index = ws / "index.html"

@@ -1,6 +1,7 @@
 import time
 
 from app.core.config import get_settings
+from app.services.project import project_workspace
 
 
 def _create_project(client, headers, name, template="blank", tech_stack="html"):
@@ -46,7 +47,7 @@ def test_generation_html_end_to_end(client, admin_headers):
     assert done["build_attempt"] == 1
 
     # 工作区产生生成摘要与 AI 注入内容
-    ws = get_settings().workspace_dir / str(project["id"])
+    ws = project_workspace(project["id"])
     assert (ws / "ai-generation.json").exists()
     index = (ws / "index.html").read_text(encoding="utf-8")
     assert "ai-generated" in index
@@ -64,7 +65,7 @@ def test_generation_repair_loop(client, admin_headers):
     project = _create_project(
         client, admin_headers, "修复看板", template="任务看板", tech_stack="vue3"
     )
-    marker = get_settings().workspace_dir / str(project["id"]) / ".mock-build-fail"
+    marker = project_workspace(project["id"]) / ".mock-build-fail"
     marker.write_text("fail", encoding="utf-8")
 
     resp = client.post(
@@ -133,7 +134,7 @@ def test_generation_blank_scaffold(client, admin_headers):
     )
     gen = _wait_terminal(client, admin_headers, resp.json()["id"])
     assert gen["status"] == "succeeded", gen
-    ws = get_settings().workspace_dir / str(project["id"])
+    ws = project_workspace(project["id"])
     assert (ws / "package.json").exists()
     assert (ws / "src" / "App.vue").exists()
 

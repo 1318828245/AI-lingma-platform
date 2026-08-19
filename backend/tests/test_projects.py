@@ -26,12 +26,14 @@ def test_create_project_from_template(client, admin_headers):
     assert len(project["slug"]) > 8
 
     # 工作区已落盘
-    from app.core.config import get_settings
+    from app.services.project import project_workspace
 
-    ws = get_settings().workspace_dir / str(project["id"])
+    ws = project_workspace(project["id"])
     assert (ws / "index.html").exists()
     assert (ws / "style.css").exists()
     assert (ws / "script.js").exists()
+    assert ws.parent.name == "multifile"
+    assert not ws.name.isdigit()
 
 
 def test_create_blank_project(client, admin_headers):
@@ -41,7 +43,23 @@ def test_create_blank_project(client, admin_headers):
         json={"name": "空白实验", "template": "blank", "tech_stack": "vue3"},
     )
     assert resp.status_code == 201
-    assert resp.json()["tech_stack"] == "vue3"
+    project = resp.json()
+    assert project["tech_stack"] == "vue3"
+    from app.services.project import project_workspace
+
+    workspace = project_workspace(project["id"])
+    assert workspace.parent.name == "vue"
+    assert not workspace.name.isdigit()
+
+
+def test_project_name_cannot_be_only_digits(client, admin_headers):
+    resp = client.post(
+        "/api/projects",
+        headers=admin_headers,
+        json={"name": "123", "template": "blank", "tech_stack": "html"},
+    )
+    assert resp.status_code == 422
+    assert "纯数字" in resp.text
 
 
 def test_create_project_with_unknown_template(client, admin_headers):

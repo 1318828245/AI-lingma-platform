@@ -127,7 +127,7 @@ async def run_modification_task(modification_id: int) -> None:
             modification.attempt += 1
             modification.started_at = datetime.now()
             db.commit()
-            workspace = project_workspace(project.id)
+            workspace = project_workspace(project)
             snapshot = modification.element_snapshot or {}
             related_files = modification.related_files_json or []
             instruction = modification.instruction

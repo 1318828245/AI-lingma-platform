@@ -10,6 +10,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.core.database import SessionLocal
 from app.models.deployment import Deployment
 from app.models.evaluation import Evaluation
 from app.models.file import File
@@ -26,15 +27,34 @@ from app.schemas.project import ProjectCreate
 
 
 def make_project_slug(name: str) -> str:
-    base = re.sub(r"[^a-zA-Z0-9]+", "-", name.strip().lower()).strip("-")
-    if len(base) < 3:
-        base = uuid.uuid4().hex[:8]
+    base = re.sub(r"[^\w\u4e00-\u9fff]+", "-", name.strip().lower()).strip("-_.")
+    if len(base) < 2 or base.isdigit():
+        base = "project"
     return f"{base[:40]}-{uuid.uuid4().hex[:6]}"
 
 
-def project_workspace(project_id: int) -> Path:
+def workspace_category(tech_stack: str) -> str:
+    return "vue" if tech_stack.lower().startswith("vue") else "multifile"
+
+
+def project_workspace(project: Project | int) -> Path:
+    """返回项目工作区；旧的纯数字目录保留为只读兼容回退。"""
     settings = get_settings()
-    return settings.workspace_dir / str(project_id)
+    if isinstance(project, Project):
+        project_id = project.id
+        tech_stack = project.tech_stack
+        slug = project.slug
+    else:
+        project_id = project
+        with SessionLocal() as db:
+            row = db.get(Project, project_id)
+            if row is None:
+                return settings.workspace_dir / str(project_id)
+            tech_stack = row.tech_stack
+            slug = row.slug
+    workspace = settings.workspace_dir / workspace_category(tech_stack) / slug
+    legacy_workspace = settings.workspace_dir / str(project_id)
+    return legacy_workspace if legacy_workspace.exists() and not workspace.exists() else workspace
 
 
 def _content_hash(content: bytes) -> str:
@@ -47,7 +67,8 @@ def write_project_file(db: Session, project_id: int, rel_path: str, content: str
     clean = rel_path.replace("\\", "/").lstrip("/")
     if clean == "" or ".." in clean.split("/"):
         raise HTTPException(status_code=400, detail=f"非法文件路径: {rel_path}")
-    ws = project_workspace(project_id)
+    project = db.get(Project, project_id)
+    ws = project_workspace(project) if project is not None else project_workspace(project_id)
     target = (ws / clean).resolve()
     if not target.is_relative_to(ws.resolve()):
         raise HTTPException(status_code=400, detail=f"文件路径越界: {rel_path}")
@@ -97,7 +118,7 @@ def create_project(
     db.add(project)
     db.flush()
 
-    ws = project_workspace(project.id)
+    ws = project_workspace(project)
     ws.mkdir(parents=True, exist_ok=True)
     if template is not None:
         _copy_template_files(db, project, template)
@@ -178,6 +199,6 @@ def delete_project(db: Session, project: Project) -> None:
     db.commit()
 
     settings = get_settings()
-    ws = (settings.workspace_dir / str(project_id)).resolve()
+    ws = project_workspace(project).resolve()
     if ws.is_relative_to(settings.workspace_dir.resolve()) and ws.exists():
         shutil.rmtree(ws)

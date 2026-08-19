@@ -8,6 +8,15 @@ from app.agents.generation.state import GenerationState
 from app.core.config import get_settings
 from app.services.events import get_broker
 from app.services.llm import LLMClient
+from app.services.project import project_workspace
+from app.agents.generation.agent import _is_unsupported_preview_command
+
+
+def test_agent_rejects_linux_dev_server_probe_commands():
+    assert _is_unsupported_preview_command(
+        "timeout 8 npm run dev > /tmp/dev.log 2>&1 & sleep 6"
+    )
+    assert not _is_unsupported_preview_command("npm run build")
 
 
 def _make_state(
@@ -21,7 +30,7 @@ def _make_state(
         "project_id": project_id,
         "session_id": session_id,
         "user_id": user_id,
-        "workspace": str(get_settings().workspace_dir / str(project_id)),
+        "workspace": str(project_workspace(project_id)),
         "requirement": requirement,
         "tech_stack": "html",
         "llm_model": "fake",
@@ -127,7 +136,7 @@ def test_agent_loop_writes_files_and_finishes(
 
     result, events = asyncio.run(scenario())
 
-    ws = get_settings().workspace_dir / str(project["id"])
+    ws = project_workspace(project["id"])
     assert (ws / "index.html").exists()
     assert "你好，灵码" in (ws / "index.html").read_text(encoding="utf-8")
     assert result["summary"] == "页面已生成"
@@ -205,7 +214,7 @@ def test_agent_guardrail_blocks_dangerous_write(
         asyncio.run(run_generation_agent(state, max_iterations=1))
     assert "生成未在" in str(exc.value)
 
-    ws = get_settings().workspace_dir / str(project["id"])
+    ws = project_workspace(project["id"])
     assert not (ws / "evil.sh").exists()
 
 

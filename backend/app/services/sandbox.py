@@ -7,6 +7,7 @@ command_mode=sandbox：白名单受限子进程（生产/受限环境用），Do
 import asyncio
 import contextlib
 import fnmatch
+import json
 import os
 import re
 import shlex
@@ -475,8 +476,14 @@ async def _real_build(
             if code != 0:
                 errors.append("npm install 失败")
                 return False, log, errors
+        build_command = ["npm", "run", "build"]
+        if _is_vite_project(workspace):
+            # 预览部署在 /preview/<project>/ 下；Vite 默认的 /assets 绝对路径会让
+            # iframe 去错误的站点根目录取资源，最终表现为整页白屏。
+            build_command.extend(["--", "--base=./"])
+            await log_line("real: Vite 使用相对资源路径构建预览")
         await log_line("real: npm run build")
-        code, output = await run_command(["npm", "run", "build"], workspace, timeout=600)
+        code, output = await run_command(build_command, workspace, timeout=600)
         for line in output.splitlines():
             await log_line(line)
         if code != 0:
@@ -510,6 +517,22 @@ async def _real_build(
     else:
         await log_line("real: 无 JS/package.json，静态校验通过")
     return True, log, errors
+
+
+def _is_vite_project(workspace: Path) -> bool:
+    package_file = workspace / "package.json"
+    if not package_file.is_file():
+        return False
+    try:
+        package = json.loads(package_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    dependencies = {
+        **(package.get("dependencies") or {}),
+        **(package.get("devDependencies") or {}),
+    }
+    build_script = str((package.get("scripts") or {}).get("build") or "")
+    return "vite" in dependencies or "vite" in build_script
 
 
 async def _mock_build(

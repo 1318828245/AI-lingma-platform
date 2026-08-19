@@ -23,8 +23,8 @@ from app.services.project import get_owned_project, project_workspace
 router = APIRouter(tags=["preview"])
 
 
-def _preview_root(project_id: int) -> tuple[Path, str]:
-    ws = project_workspace(project_id)
+def _preview_root(project: Project | int) -> tuple[Path, str]:
+    ws = project_workspace(project)
     dist = ws / "dist"
     if (dist / "index.html").exists():
         return dist, "dist"
@@ -41,8 +41,8 @@ def preview_status(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    get_owned_project(db, project_id, user.id)
-    _, mode = _preview_root(project_id)
+    project = get_owned_project(db, project_id, user.id)
+    _, mode = _preview_root(project)
     if mode in ("dist", "static"):
         status = "ready"
     elif mode == "source":
@@ -69,7 +69,7 @@ def preview_file(
         raise HTTPException(status_code=401, detail="缺少预览令牌")
     user = get_user_from_token(db, auth_token)
     project = get_owned_project(db, project_id, user.id)
-    root, _ = _preview_root(project_id)
+    root, _ = _preview_root(project)
     if not root.exists():
         raise HTTPException(status_code=404, detail="项目还没有可预览的内容")
 
@@ -123,8 +123,8 @@ async def project_screenshot(
     db: Session = Depends(get_db),
 ):
     """首页项目截图：首次访问时生成并缓存，产物变化后自动重建。"""
-    get_owned_project(db, project_id, user.id)
-    root, mode = _preview_root(project_id)
+    project = get_owned_project(db, project_id, user.id)
+    root, mode = _preview_root(project)
     if mode not in ("dist", "static"):
         raise HTTPException(status_code=404, detail="项目尚未生成可预览内容")
     index = root / "index.html"
