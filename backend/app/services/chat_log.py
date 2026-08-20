@@ -57,6 +57,20 @@ def save_generation_event(session_id: int, event: dict) -> None:
         )
     elif etype == "file_written":
         save_message(session_id, "file_written", str(event.get("path", "")))
+    elif etype == "asset_collection_started":
+        save_message(
+            session_id,
+            "asset",
+            str(event.get("query", "")),
+            {"status": "started", "kind": event.get("kind"), "asset_job_id": event.get("asset_job_id")},
+        )
+    elif etype == "asset_collection_completed":
+        save_message(
+            session_id,
+            "asset",
+            str(event.get("message", "")),
+            {"status": "completed", "asset_job_id": event.get("asset_job_id"), "selected": event.get("selected"), "degraded": event.get("degraded", False)},
+        )
     elif etype == "build_log":
         line = str(event.get("line", "")).strip()
         if line:

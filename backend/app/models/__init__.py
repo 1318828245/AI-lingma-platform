@@ -14,6 +14,7 @@ from app.models.template import Template
 from app.models.user import User
 
 __all__ = [
+    "AssetJob",
     "DailyStat",
     "Deployment",
     "Evaluation",
@@ -25,8 +26,10 @@ __all__ = [
     "Metric",
     "Modification",
     "Project",
+    "ProjectAsset",
     "ProjectVersion",
     "Session",
     "Template",
     "User",
 ]
+from app.models.asset import AssetJob, ProjectAsset

@@ -1,284 +1,55 @@
 # PROJECT_STATE
 
-- [x] 修改可靠性与流恢复：修改任务具有构建/交互校验失败自动回滚；SSE 具有事件 ID 与断线游标补发，覆盖运行中页面重连。
-- [x] 首次生成技术栈确认：提交前由分流 Agent 判断 HTML/Vue 适配度；仅在建议与已选项不一致时要求用户确认，确认后项目标签与生成约束保持一致。
-
-- [x] 修改结果一致性：修改 Agent 只编辑源码并拒绝构建产物，Vue 修改后自动重建预览；接受/撤销状态持久化到修改记录和会话历史，重进后可准确回放。
-
-- [x] 聊天意图与修改结果闭环：聊天输入按点选状态、显式创建语义与项目上下文分流生成/修改；修改前后均保存快照，完成卡片支持接受或一键撤销到修改前版本。
-- [x] 运行阶段精确恢复：重新进入运行中项目时读取会话中最后一个持久化 `stage` 事件恢复阶段栏，不再固定显示为“规划”。
-
-## 最新同步（2026-08-19）
-
-- [x] 任务恢复与项目隔离：进入项目时查询并恢复 `pending/running` 的生成或修改任务，重新订阅 SSE；项目 ID 变化强制重建工作台，避免旧项目状态串入新项目。
-
-- [x] 修改交互闭环：点选元素或聊天“直接修改”均创建同一修改任务；聊天页实时渲染修改事件，历史回放按思考、工具、文件、差异和总结分类，避免源码污染普通气泡。
-
-- [x] 存储命名统一：工作区、缩略图、版本根目录均使用项目的 ASCII `yyyy-mm-dd-hh-mm-ss-random` 标识；版本快照子目录也使用同一格式，启动时自动迁移旧中文或数字工作区。
-
-- [x] 模型与工具调用分层：`services/model` 统一模型 Provider 契约，`agents/tooling` 统一 schema、调用/结果、策略和执行；生成与修改 Agent 通过同一工具链运行，修改 Agent 无命令权限。
-- [x] 提示词工程化：提示词收敛为路由、生成、修改 3 个 Agent 模板，以及生成工作流的解析、计划、总结 3 个子任务模板；均位于 `backend/app/prompts/`，定义角色、输入边界、流程、失败策略与输出契约。
-- [x] 真实模型验收：DeepSeek 已通过 HTML 生成、路由 Agent（静态页保持 HTML、后台页建议 Vue、用户保留 HTML）与修改 Agent（新增按钮具有点击反馈）冒烟；脚本位于 `backend/smoke_*.py`。
-- [x] Agent 评测基线：`backend/evals/agent_regression_cases.json` 固化 HTML/Vue 路由、生成工具工作流和修改澄清/交互约束；pytest 自动加载验证。
-- [x] 前端首屏优化：移除全量 Element Plus 安装，改为消息组件按需样式；字体改为 Latin 子集，路由页面保持异步加载。
-
-- [x] 工作区按技术栈分流：Vue 项目位于 `storage/workspaces/vue/<slug>`，HTML/多文件项目位于 `storage/workspaces/multifile/<slug>`；新建与重命名均拒绝纯数字项目名，slug 不再使用简单数字。
-- [x] Vite 构建追加 `--base=./`，预览服务优先托管 `dist`，解决嵌入式预览中资源请求落到平台根路径而导致白屏的问题。
-- [x] 生成 Agent 的命令提示与运行时校验已限制为 Windows 平台托管预览模式：允许 `npm install` 与 `npm run build`，拒绝 `npm run dev`、Linux `timeout/sleep`、`/tmp`、重定向和后台命令。
-- [x] 生成工作台增加非阻断阶段进度条；历史回放不再把阶段事件混入聊天消息。右侧预览支持生成中、未生成、失败、可预览状态，并修复 ready iframe 被空态覆盖的问题。
-- [x] 验证：backend `python -B -m pytest -q` 通过（70 passed）；frontend `npm run build` 通过（含 `vue-tsc --noEmit`）。
-更新于：2026-08-18（以当前代码核对）
+更新：2026-08-20（以当前代码和自动化验证为准）
 
 ## 当前里程碑
-- 里程碑：M1（骨架与核心生成回路）
-- 完成度：100%（M1 全部完成：骨架 / 生成工作流 / SSE / 任务管理 / 基础预览 / 前端脚手架）
 
-## 已完成（含验证方式）
-- [x] 后端骨架可启动（uvicorn 冒烟：/api/health 返回 ok；admin 登录成功）
-- [x] 数据表模型（当前模型文件 14 个，对应业务表清单含 daily_stats，共 15 张表：users/projects/sessions/generations/modifications/
-      files/file_versions/project_versions/messages/deployments/templates/
-      evaluations/guardrail_events/metrics/daily_stats）
-- [x] Alembic 脚手架 + 初始迁移（对全新 SQLite 库 autogenerate 并 upgrade head 通过）
-- [x] JWT + bcrypt 认证：登录/登出/刷新/me；注册受开关控制（默认关闭）
-- [x] 内置管理员初始化脚本（python -m app.scripts.init，幂等）
-- [x] 3 个种子模板（个人名片页/任务看板/管理后台模板），新建项目自动落盘到工作区
-- [x] 项目 CRUD（owner 隔离、slug 唯一、级联删除工作区）、会话列表/消息、模板列表
-- [x] 管理员 API：系统设置（内存态）、用户列表/修改/重置密码；不可自降级
-- [x] pytest 21 例全部通过（认证 7 + 项目 5 + 会话 2 + 管理员 5 + 健康 1 + 模板 1）
-- [x] M1-2 生成工作流：解析→规划→生成→输出护轨→构建→修复→总结（状态机等价 LangGraph，
-      节点/状态字段与提示词 6.1 对齐，可平替）
-- [x] SSE 事件流：stage/thought/tool_call/file_written/build_log/completed/error/cancelled
-- [x] 任务模型：pending→running→succeeded/failed/cancelled/timed_out/interrupted；
-      并发上限 2、FIFO 队列、单任务超时、节点边界取消、启动时遗留任务恢复
-- [x] 输入/输出护轨（规则版）：注入/危险命令拦截并写入 guardrail_events（LLM 复核 M3）
-- [x] LLM 适配层：默认 mock 执行器离线可跑；配置 base_url/api_key 走 OpenAI 兼容协议
-- [x] 构建：mock 模式（测试）+ 真实模式（npm install --ignore-scripts / npm run build、
-      静态 JS 走 node --check）
-- [x] 生成 API：创建/查询/取消/追加消息/SSE/评估占位
-- [x] pytest 28 例全部通过；真实 npm 构建冒烟通过（dist/index.html 产出）
-- [x] 生成工作流迁移到 LangGraph StateGraph（conda 环境预装 langgraph 1.2.11）；
-      节点/条件边与文档 6.1 完全一致，pytest 28 例复测通过
-- [x] 运行环境切换为 conda env01-p10-drawimg（用户指定），依赖已装齐且 pip check 无冲突
-- [x] M1-3 前端脚手架：Vue 3 + Vite + TypeScript + Pinia + Vue Router + Element Plus + Axios
-- [x] 页面：登录 / 项目列表（新建/删除）/ 生成对话（SSE 阶段条+日志+文件树）/ 预览工作台
-      （桌面/平板/手机三档视口，iframe 沙箱）
-- [x] 后端基础预览：/preview/{project_id}/{path}（dist 或工作区静态文件、SPA fallback、
-      路径穿越防护、query token 鉴权）、/api/projects/{id}/preview/status、文件树 API
-- [x] SSE 支持 query token（EventSource 无法自定义 header）
-- [x] npm run build 通过；前后端 E2E 冒烟通过（Vite 代理登录→建项目→生成→预览 200）
-- [x] pytest 34 例全部通过（新增预览/文件树/SSE token 6 例）
-- [x] 安装 frontend-design 技能（anthropics/skills，C:\Users\13188\.codex\skills\frontend-design）
-- [x] 前端 UI 重设计（按 frontend-design 方法论）：墨蓝+琥珀设计令牌、
-      Space Grotesk / Inter / IBM Plex Mono 本地字体（fontsource，离线可用）
-- [x] 生成对话页改为“左对话 + 右实时预览”同屏工作台，不再依赖按钮跳转预览；
-      新增 LivePreviewPanel（设备框预览 + 三档视口 + 构建状态条）与 StageRail 流水线
-- [x] 登录页 / 项目列表 / 全屏预览统一视觉；npm run build + 运行时冒烟通过
-- [x] 按用户反馈做友好化调整：冷色控制室 → 温暖浅色工作室（奶油纸底 #F8F6F1 +
-      柔和靛蓝 #5B67F1，琥珀只保留给“构建中”瞬间）
-- [x] 交互友好化：全局键盘聚焦环、按钮悬停/按下/禁用态、Enter 发送（Shift+Enter 换行）、
-      阶段提示 tooltip、更友善的空状态/错误文案、登录页暖色渐变与引导文案
-- [x] 构建与冒烟通过
-- [x] 接入真实 LLM：DeepSeek V4（deepseek-v4-flash，reasoning_effort=high，
-      base_url=https://api.deepseek.com）；密钥存 backend/.env（gitignored，不提交）
-- [x] LLM 适配层支持 reasoning_effort 与 thinking 模式；连通测试 200 + 真实端到端
-      生成 succeeded（解析/规划/总结走 DeepSeek，构建仍为 mock 执行器）
-- [x] LLM 自主写代码（ReAct Agent）：list_files/read_file/write_file/edit_file/
-      run_command/finish 工具循环，输出护轨拦截危险写入，SSE 推送 thought/tool_call/
-      file_written，轮次上限 10、token 用量统计、节点边界取消
-- [x] generate_code 真实模式走 Agent，mock 回退保留；总结优先用 Agent finish(summary)
-- [x] Agent 单元测试 3 例（写盘闭环/护轨拦截/轮次上限）+ 全量 pytest 37 passed
-- [x] 真实 DeepSeek 冒烟：LLM 自主生成完整 index.html（落地页），status=succeeded
-- [x] 修复预览静态资源 422：iframe 内相对资源（style.css/script.js）不带 query token；
-      改为同源 Cookie（preview_token，path=/preview）鉴权，query token 保留兼容；
-      pytest 38 passed + 运行时冒烟 root/css/js 均 200、无 Cookie 401
-- [x] 对话流重构：移除独立“实时日志”区域；stage/think/tool_call/file_written/
-      build_log/error 全部并入对话记录；思考与构建日志可点击折叠，工具调用带 SVG 图标，
-      阶段以琥珀圆点+说明展示；窄屏（≤1024px）上下堆叠；npm run build + 冒烟通过
-- [x] 修复生成对话页白屏：GenerationChatView 使用了 computed 但漏导入（vite build
-      不做类型检查导致构建通过、运行时崩溃）；已补导入并接入 vue-tsc 类型门禁
-      （npm run typecheck），构建脚本改为 typecheck && vite build
-- [x] LLM 真实流式输出：DeepSeek 走 SSE stream，reasoning_content/content 逐字推送
-      （reasoning_delta / assistant_delta，完整不截断）
-- [x] 工具调用两段事件：tool_call_started（前端转圈“调用中…”）→ tool_call_completed
-      （成功/失败标记）；写文件仍发 file_written
-- [x] 前端对话流流式渲染：思考默认展开、逐字追加+光标闪烁，可点击折叠；工具条目转圈→图标；
-      模型首轮后直接给正文总结时自动视为完成（不再空转到轮次耗尽）
-- [x] 修复事件总线 asyncio.Lock 跨事件循环挂起（改用线程锁，短操作安全）
-- [x] 真实冒烟：469 个 reasoning_delta（2005 字符思考）+ 93 个 assistant_delta +
-      6 次工具 started/completed + 3 文件写入 → succeeded；pytest 38 passed
-- [x] 流式渲染性能优化：增量 40ms 合批刷新（不再逐 token 重渲染/滚动），
-      自动滚动只在用户接近底部时执行，避免强拉；组件卸载清理定时器
-- [x] Markdown 渲染：AI 总结支持 GFM（标题/列表/引用/表格）+ 代码高亮
-      （marked + marked-highlight + highlight.js + DOMPurify 消毒），代码块深色等宽
-      且最大高度 340px 内部滚动
-- [x] 思考内容 max-height 240px 内部滚动（overscroll contain），不再无限挤压页面
-- [x] 过程事件持久化：stage/think/tool_call/file_written/build_log 落库为会话消息
-      （services/chat_log.py），退出重进后对话流完整回放；流式增量在完成点持久化，
-      避免碎片化；消息排序按 created_at+id
-- [x] 前端历史加载按 msg_type 还原为同一套对话条目（阶段/思考/工具/文件/构建日志分组）
-- [x] 真实生成验证：重新拉取消息含 text/stage/think/tool_call/file_written/
-      build_log/summary 全部类型；pytest 38 passed + 前端 build 通过
-- [x] 工具调用展示改版：与思考平级，连续工具调用合并为一个“工具调用”气泡
-      （每行一个调用：图标/名称/路径/成功/失败/转圈）；历史回放同样合并
-- [x] 规划阶段不再输出写死的“实施计划完成，共 N 步”：改为展示真实计划步骤列表；
-      计划生成改为紧扣具体需求（prompt 明确禁止通用步骤，mock 也按需求特性生成）
-- [x] 流式结束事件 stream_end：思考输出完后清除“思考中…”与转圈，并切换 Markdown 渲染；
-      AI 正文同样在流结束后结束流式状态
-- [x] 思考内容改为 Markdown 渲染（代码/列表/引用等友好展示，限高滚动保留）
-- [x] 工具调用中文名：读取目录/读取文件/写入文件/修改文件/运行命令/完成
-- [x] 修复工具“失败”误报：read_file 返回纯文本被成功判定当 JSON 解析导致全标失败；
-      改为返回结构化 JSON，非 JSON 结果视为成功；白名单补充 npx；
-      真实冒烟 6 次工具调用全部 ok=True
-- [x] run_command 可用性：内置模拟 ls/cat/pwd/dir/type/echo/find/grep/where/cd
-      （纯 Python，不依赖外部二进制，Windows 同样可用）；npm/npx/node/python 走真实
-      子进程（.cmd 自动经 cmd.exe 包装）；工具描述明确支持范围；
-      pytest 42 passed（新增沙箱 4 例）
-- [x] 修复 node -e / python3 -c 失败：
-      - python3 解析到 Windows 商店别名 stub（WindowsApps）→ WinError 1920，
-        改为回退真实 python/py（跳过 WindowsApps）
-      - 模型把整条命令作为单个字符串传入时被白名单拒绝 → 支持 shlex 拆分字符串命令
-      - python 子进程强制 UTF-8 输出，输出解码 UTF-8 失败时回退 GBK，中文不乱码
-      - 实测用户命令：node -e 总行数=4、python3 -c 总行数=3 均返回 0；
-        pytest 44 passed（新增字符串命令/python3 回退 2 例）
-- [x] 修复思考完成后仍转圈/“思考中”的竞态：stream_end 可能先于 40ms 合批刷新到达，
-      旧逻辑按“最后一条”找思考条目会扑空；改为收到首个增量立即创建条目并用显式 ID
-      追踪，stream_end/工具开始/完成/错误/取消统一清理
-- [x] 思考完成自动收起（collapsed=true），历史回放的思考默认收起，可点击展开
-- [x] 收起后可重新展开：点击后自动滚动到该条目；Markdown 渲染失败时降级纯文本兜底
-- [x] 修复 run_command 展示逐字符间隔：模型以字符串传命令时先 shlex 拆分再生成
-      detail（显示/执行一致）；失败时把错误信息（error/退出输出尾部）随事件与历史落库，
-      前端“失败”徽标带 title 显示原因；pytest 45 passed
-- [x] 思考 Markdown 展示加固：任何结束事件（stream_end/完成/错误/取消）统一扫描清除
-      残留 streaming 标记，确保思考切换到 MarkdownView（含代码高亮/列表/加粗）；
-      思考内容区改为“文档卡片”样式（琥珀左边线+内边距），Markdown 排版一眼可辨；
-      验证 marked+marked-highlight 代码围栏输出 <pre><code class="hljs">
-- [x] Agent 工具调用轮次上限 10 → 50（配置 AI_LINGMA_AGENT_MAX_ITERATIONS=50）
-- [x] 受限环境子进程不可用（NotImplementedError）降级：
-      - run_command 捕获 NotImplementedError 并给出明确原因
-      - node --check 校验命令降级为“跳过+告警”（工具结果 exit_code=0），不再全盘失败
-      - 静态构建门禁中 node 语法检查不可用时仅警告、不阻断构建
-      - pytest 46 passed（新增降级单测）
-- [x] 首页项目截图：后端用无头 Edge/Chrome 截取预览页并缓存 PNG
-      （storage/thumbnails/{project_id}.png，index.html 变更后自动重截）；
-      前端项目卡片显示真实网页截图，未生成/截图失败回退默认图块（“尚未生成”）；
-      实测 API 返回 200 image/png（43KB）；pytest 50 passed（新增截图 4 例）
-- [x] 修复首页截图永远“正在生成截图”：图片此前仅在状态变为 ok 后才挂载，
-      而 ok 只能由图片 @load 触发（死循环）；改为图片始终渲染（隐藏直到加载完成），
-      默认图块作为覆盖层，@load/@error 正常触发
-- [x] 按用户要求移除沙箱限制：新增 command_mode=shell（默认），命令按本机终端语义执行；
-      轻量 Shell 解释器（shlex 解析引号 + && / || / ; 顺序执行 + VAR=val 前缀），
-      不走 cmd.exe（规避 Windows 引号怪癖），npm/node/python 直接解析 PATH 执行
-- [x] 保留 sandbox 模式（白名单受限执行）供生产/受限环境切换；管道/重定向暂不支持
-      （返回明确提示）；pytest 可收集 62 例，当前全量回归通过
-- [x] 首页改版：顶部醒目“AI 灵码平台”标识；居中快速创建框（项目名 + HTML/Vue 选项 +
-      创建按钮），下方三个竖排提示词模板（点击填入名称）；项目卡片整卡可点击进入
-      （操作按钮独立不冒泡）；移除旧的“新建项目”弹窗
-- [x] 项目页新增“重命名”按钮（ElMessageBox.prompt + PATCH /projects/{id}），
-      重命名后顶栏与列表即时更新
-- [x] 快速创建区样式统一：图标标题头、mono 大写标签、分段式技术栈选择（替换原生
-      select）、聚焦光环输入框、全宽主按钮、模板改为卡片行（图标+文字+箭头+悬停动效）
-- [x] 快速创建区加宽：宽度 = 页面 80%（上限 920px），最小高度 320px 垂直居中；
-      布局改为“名称 + 技术栈 + 创建按钮”同一行，按钮置于右侧（窄屏自动折行）
-- [x] 再次加宽至页面 95%（上限 1000px）；名称输入框改为 textarea（更高、自动换行，
-      回车创建、Shift+Enter 换行），技术栈分段与按钮同步加高
-- [x] 移除“第 N 轮工具调用完成”过程话术（不再独立输出思考气泡）；
-      工具气泡内所有调用完成后显示“✓ 完成”
-- [x] 首页输入框改为“生成提示词”：大号 textarea（120px 高、15px 字号），
-      创建后自动进入生成页并携带提示词自动开始生成（router query，消费后清理防重复）
-- [x] 首页整体加宽：内容区 max-width 1080 → 1440px，快速创建区占满内容区宽度，
-      项目卡片网格同步放大
-- [x] 修复首页截图仍显示“尚未生成”：
-      - 无头浏览器加载预览页时静态资源（css/js/svg）因无 Cookie 全部 401，截图残缺；
-        preview 接口在用 query token 访问时自动 Set-Cookie（Path=/preview），
-        子资源全部 200，截图含完整样式（实测 191~356KB）
-      - 首页卡片截图改为进入视口附近后才按需请求，避免多个项目同时阻塞无头浏览器截图队列；
-        截图失败仅显示“重试截图”，不再自动删除缓存并重复强制截图。
-      - 截图成功后浏览器私有缓存 1 小时；无头浏览器的固定渲染等待由 5 秒降至 3 秒。
+- 当前：M3 异步素材编排、质量与安全闭环；M3-1 第一版异步素材编排已完成，下一项为 M3-2 持久化评估结果。
+- M1 生成核心回路：完成。
+- M2 可控修改回路：完成。
+- M4 部署、M5 运营后台、M6 生产化：未开始。
 
-## 进行中 / 下一步
+## 已完成
 
-## 最新同步（2026-08-18）
-- [x] 生成工作台切换为明亮视觉体系：白色面板、浅灰画布、蓝紫主色、统一圆角/边框/阴影，移除主界面的深色工作台风格。
-- [x] 统一前端组件排版：顶部标题加大并强化层级，正文/事件标题/辅助信息/代码文字分别设置字号、字重和行高；修复深色主题遗留的低对比度文字。
-- [x] 左右区域支持 Pointer Events 拖拽分栏：必须按住鼠标才能调整，松开即停止；宽度边界根据左右最小可用宽度动态计算。
-- [x] 预览区域适配桌面、平板、手机三档视口，预览画布与整体容器宽度联动，避免无效留白。
-- [x] 对话事件视觉分层：stage、thinking、tool_call、file_written、build_log、error 使用独立卡片/状态色；连续工具调用合并展示。
-- [x] SSE 流式代码展示：`file_written` 事件携带文件内容，前端展示当前写入文件的代码预览并自动收起旧文件内容。
-- [x] 命令执行修复：完整字符串命令支持 shell 语义；补充 `ls -la`、`wc -l`、`head -c` 等常用命令及 Windows 回退处理。
-- [x] 当前验证：backend `pytest -q` 全量 63 例通过；frontend `npm run build` 通过（包含 `vue-tsc --noEmit`）。
-- [x] M2-1 版本基础能力：生成成功自动创建项目版本快照；新增版本列表、当前工作区与版本 diff、版本回滚 API；回滚同步恢复工作区和文件元数据；新增版本 API 回归测试
-- [x] M2-2 文本修改闭环：iframe 点选/悬停高亮、元素快照采集、修改面板、修改任务 API/SSE、源码定位、文本局部替换、diff、修改后版本快照；新增修改 API 回归测试
-- [x] M2-3 Agent 与版本面板：真实 LLM 修改 Agent 工具循环（list/read/edit/write/finish）、样式/结构修改提示、前端 diff 查看、版本历史和回滚面板；Mock 模式继续用于离线回归
-- [ ] 下一步：M3 质量闭环（LLM 护轨复核、5 维自评、低分修复循环）
-- [ ] 后续：M3 护轨 LLM 复核与自评、M4 部署引擎（本轮不开始）
+- [x] 身份、项目、模板、会话、消息和基础管理员 API；项目按 owner 隔离。
+- [x] 工作区、缩略图、版本目录统一使用 `yyyy-mm-dd-hh-mm-ss-random` ASCII 标识；按 `multifile`/`vue` 分流存储。
+- [x] 路由 Agent 在创建前校验 HTML/Vue 适配度，冲突时要求确认。
+- [x] 生成 LangGraph：护轨 → 需求解析 → 计划 → 生成 → 输出护轨 → 构建/修复 → 总结。
+- [x] 模型 Provider、工具 schema/策略/执行分层；生成和修改使用统一工具链，修改无 shell 权限。
+- [x] SSE 实时事件、`event_id`/`Last-Event-ID` 进程内补发、运行中任务重订阅与历史回放。
+- [x] 静态预览、视口切换、Vue `dist` 托管及 `--base=./` 构建修复。
+- [x] 点选和聊天修改、源码快照、diff、接受、撤销、构建/交互失败自动回滚。
+- [x] 规则护轨、路径防护、工具参数/权限/写入量限制和护轨事件记录。
+- [x] 提示词收敛为 `backend/app/prompts/` 下 6 个 Markdown 文件；Agent 回归场景位于 `backend/evals/`。
+- [x] 前端入口按需注册 Element Plus 必要组件与样式，避免全量组件包影响首屏。
+- [x] 异步素材编排：生成 Agent 可调用 `collect_assets`；`asset_jobs`/`project_assets` 持久化候选与选用素材，SSE/历史展示检索和降级结果。
+- [x] 素材来源策略：Iconify/Lucide 图标经固定来源下载、大小/MIME/主动 SVG 校验后写入 `assets/icons/`；可选 Pexels 图片仅保留来源外链与署名，需配置 API Key。
+- [x] `assets/manifest.json` 纳入项目版本快照，项目资产可通过 `GET /api/projects/{id}/assets` 查询，删除项目时清理记录和文件。
 
-## 关键决策与默认值
-- 数据库：SQLite（storage/app.db），生产切 PostgreSQL；开发用 create_all，
-  Alembic 迁移已就绪并验证
-- 本机 Python 3.10.19（文档要求 3.11+），代码按 3.10 兼容编写；Node 18.20.8
-- 命令执行：本地开发默认 shell 模式（等同本机终端权限）；sandbox 为白名单受限模式，Docker 沙箱 M6 补齐
-- 运行环境：conda env01-p10-drawimg（Python 3.10；langgraph 1.2.11 / langchain-core 1.5.4 /
-  langchain-openai 1.5.0）；backend/.venv 已停用但未删除（gitignored，可自行清理）
-- LangGraph：conda 环境预装 langgraph 1.2.x，生成工作流已用 StateGraph 实现；
-  PyPI 索引对 langgraph-core 包仍 404，但不影响（langgraph 包已满足需求）
-- LLM：默认 mock；配置 AI_LINGMA_LLM_BASE_URL/API_KEY/MODEL 后走 OpenAI 兼容协议
-- LLM 实际配置：deepseek-v4-flash（high effort，thinking enabled），见 backend/.env
-- 构建：AI_LINGMA_BUILD_MODE=mock（离线）/ real（真实 npm 构建）
-- 预览：基础版直接服务 dist（优先）或工作区静态文件；按项目的 Vite dev-server
-  热更新推迟到 M2/M6；iframe 使用 sandbox + 服务端代理
-- SSE：EventSource 用 query token 鉴权；普通 API 仍用 Authorization header
-- 前端构建为 typecheck（vue-tsc --noEmit）+ vite build，当前已接入类型门禁
-- 预览内嵌在生成对话页右侧；全屏预览页仍保留供独立查看
-- 字体全部本地打包（@fontsource），不依赖外部 CDN
-- Agent 轮次上限默认 50（AI_LINGMA_AGENT_MAX_ITERATIONS）；run_command 默认走 shell 模式，sandbox 模式可切换
-- 预览鉴权：preview_token Cookie（path=/preview，前端 JS 写入，非 HttpOnly）；
-  仅限本地/内网开发，M4/M6 部署隔离时升级为 HttpOnly + 严格 CSP
-- SSE 事件扩展：reasoning_delta / assistant_delta / tool_call_started /
-  tool_call_completed（原有事件保留兼容）
-- 前端渲染：marked/highlight.js/dompurify 本地打包；流式期间显示纯文本+光标，
-  结束后切 Markdown 渲染，避免逐字重排
-- 会话回放：生成过程事件落库（msg_type=stage/think/tool_call/file_written/build_log），
-  与实时 SSE 同源映射，前端历史与实时渲染共用一套条目模型
-- 对话条目模型：思考=think（可折叠），连续工具调用=tools 组气泡，其余 stage/file/
-  build/error/info 各自成条
-- 沙箱 run_command：白名单 npm/npx/node/python/python3；只读检查命令由 Python 内置
-  模拟（ls/cat/pwd/dir/type/echo/find/grep/where/cd），输出有长度与条数上限
-- 沙箱 run_command：接受字符串命令自动 shlex 拆分；python3 回退真实 python/py
-  （跳过 WindowsApps stub）；python 子进程 PYTHONUTF8=1，输出 GBK/UTF-8 双解码
-- 受限环境降级：子进程 NotImplementedError → BuildError；node --check 跳过并告警，
-  npm 等构建命令在环境不支持时仍明确失败（不伪造构建成功）
-- 截图：AI_LINGMA_BACKEND_URL 供无头浏览器回访预览页；截图失败/未生成返回 404，
-  前端 <img> 加载失败自动显示默认占位卡片
-- 命令执行：AI_LINGMA_COMMAND_MODE=shell（默认，等同本机终端权限，仅限本地开发）/
-  sandbox（白名单受限）；生产部署必须切换 sandbox 或 Docker 沙箱（M6）
-- 管理员设置（注册开关/配额）暂为内存态，重启恢复 env 默认值；M5 做持久化
-- 登录为无状态 JWT，logout 仅前端丢弃令牌；黑名单在 M5 补齐
-- 项目删除先停任务（当前无任务）再清理库记录与工作区目录
+## 已验证
 
-## 最近构建/测试结果
-- 当前验证：frontend `npm run build` 通过（包含 `vue-tsc`，Vite 构建完成）
-- 当前验证：backend `pytest -q` 全量 63 例通过；frontend `npm run build` 通过（包含 `vue-tsc --noEmit`）
-- 真实 LLM 连通：POST /chat/completions → 200；端到端生成 succeeded（model=deepseek-v4-flash）
-- 真实 Agent 冒烟：python smoke_agent.py → succeeded，LLM 自主写 index.html
-- 前后端 E2E 冒烟：Vite 代理登录→创建项目→生成 succeeded→预览 HTTP 200
-- UI 冒烟：新工作台布局页面可正常服务，登录/项目列表 API 正常
-- alembic upgrade head → 通过（e0806b14bcc1 + 1c4243ee8fbd；dev 库已迁移）
-- 真实构建冒烟：任务看板模板生成 → npm install/build → dist/index.html 产出，succeeded
-- uvicorn 冒烟：health ok、admin 登录 200（M1-1）
+- 后端：`python -B -m pytest -q` 最近通过 84 项。
+- 前端：`npm run build` 通过（含类型检查）。
+- 真实模型：`backend/smoke_agent.py`、`smoke_route_agent.py`、`smoke_modification.py` 已完成生成、路由和修改冒烟。
+- 静态检查：`git diff --check` 通过。
 
-## 已知问题与阻塞
-- Starlette 1.6 提示 httpx TestClient 弃用（仅警告，不影响运行）
-- 真实 LLM 配置位于 backend/.env（gitignored，当前代码默认仍可回退 mock）；不要将密钥写入仓库
-- PyPI 索引对 langgraph-core 包名仍 404，但 conda 环境预装 langgraph 1.2.11 已满足
-- Windows 控制台向 Python 传中文 stdin 会乱码；中文脚本请写成 .py 文件执行
-- pytest 默认缓存插件在当前工作区文件系统上可能导致收尾阶段卡住；`backend/pytest.ini` 已关闭该插件，测试命令可正常退出
+## 已知边界
 
-## 续接指引
-- 启动：cd backend && python -m uvicorn app.main:app --reload --port 8000
-- 初始化：python -m app.scripts.init
-- 测试：python -m pytest -q
-- 端口：后端 8000、前端 5173（npm run dev）
-- 管理员账号：admin / admin123（.env 可改）
-- 快速体验生成：POST /api/projects/{id}/generations {"requirement":"..."}，
-  然后 GET /api/generations/{id}/events 看 SSE，GET /api/generations/{id} 轮询状态
-- 下一步入口：M3 —— backend/app/services/evaluation.py 与护轨 LLM 复核；M2 修改 Agent 在配置真实 LLM 时启用，未配置时使用 Mock
+- evaluation API 仍返回占位结果；`evaluations`、部署、指标等 ORM 表预留不代表功能已实现。
+- 当前 SSE 缓冲和任务队列均为进程内实现；重启后依赖会话历史回放，不支持跨进程实时恢复。
+- 预览 iframe 为保障运行仍允许脚本、同源、表单和弹窗；严格 CSP/容器隔离属于 M6。
+- 浏览器人工验收尚需执行，清单见 `docs/BROWSER_ACCEPTANCE.md`。
+- 素材任务当前随生成 Agent 的工具调用完成；独立 worker、取消、跨进程恢复、用户选择/替换 UI、图片转码和缩略图尚未实现。
+- 第一版仅接入 Iconify/Lucide 和可选 Pexels；真实 Pexels 使用前需配置 Key 并完成来源条款与浏览器署名验收。
+- 来源连接失败会在素材完成事件和 `asset_jobs.error` 中保留具体来源错误，不再统一伪装为“未找到素材”。
+
+## 下一步
+
+实施 M3-2：生成/修改结束时计算并持久化统一评估结果，evaluation API 返回真实记录，项目页展示评估摘要和修复建议，并为成功/失败路径补齐回归测试与浏览器验收。素材部分随后补独立 worker、取消/恢复、来源展示和替换 UI。
+
+## 续接
+
+- 后端测试：`cd backend; python -B -m pytest -q`
+- 前端构建：`cd frontend; npm run build`
+- 真实模型冒烟：在配置模型环境后运行 `backend/smoke_*.py`
+- 修改前先阅读本文件、`AI灵码平台-详细提示词-v3.md` 与相关测试；状态冲突时以代码为准。

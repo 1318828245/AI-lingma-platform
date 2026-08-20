@@ -59,6 +59,13 @@ class Settings(BaseSettings):
     # 生成 Agent（ReAct 工具循环）
     agent_max_iterations: int = 50
 
+    # 异步素材编排：图片来源均通过白名单适配器访问，密钥不暴露给模型。
+    asset_request_timeout_seconds: int = 8
+    asset_iconify_enabled: bool = True
+    asset_iconify_api_url: str = "https://api.iconify.design"
+    asset_pexels_api_key: str = ""
+    asset_pexels_api_url: str = "https://api.pexels.com/v1"
+
     # 命令执行模式：shell=本机终端语义（无沙箱，本地开发默认）；
     # sandbox=白名单受限执行（生产/受限环境）
     command_mode: str = "shell"

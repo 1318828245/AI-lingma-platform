@@ -24,6 +24,7 @@
 - `agents/tooling/`：集中维护工具 schema、调用/结果契约、Agent 权限策略、执行器和安全展示摘要。
 - `prompts/`：所有 Agent 与模型辅助步骤的独立 Markdown 提示词；目录内 `README.md` 标明调用方和可注入变量，业务代码通过 `app.prompts` 加载。
 - 生成 Agent 可调用文件与构建工具；修改 Agent 不允许运行命令。所有工具调用均先经参数、敏感路径与写入大小校验，再进入副作用执行。
+- 生成 Agent 还可调用 `collect_assets`：仅能通过白名单来源检索图标或图片。Iconify/Lucide 图标会经 SVG 安全校验后写入项目 `assets/`；配置 Pexels Key 后可使用带来源和署名的图片外链，素材清单可由项目资产 API 查询。
 
 ### 技术栈确认
 
@@ -141,7 +142,6 @@ python -m pytest -q
 - 命令执行兼容完整字符串命令及 shell 组合语法；补充 `ls -la`、`wc -l`、`head -c` 等常用检查命令的处理。
 - 前端验证：`npm run build`（包含 `vue-tsc --noEmit`）通过；后端全量回归 63 例通过。
 
-- M3：LLM 护轨复核、5 维自动评估、低分自动修复循环和评估结果展示。
-- M3：5 维自动评估、低分自动修复、LLM 二次护轨。
+- M3：第一版异步素材编排已完成；下一步是 5 维自动评估、低分自动修复、LLM 二次护轨。
 - M4：独立 slug 部署、部署历史、部署回滚与下线。
 - M5/M6：完整 RBAC/配额/监控后台、Docker 沙箱、Compose 生产部署与数据运维能力。

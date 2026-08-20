@@ -849,6 +849,11 @@ function historyToEntries(history: Message[]): ChatEntry[] {
       else list.push({ id: ++seq, kind: "build", lines: [m.content], collapsed: true });
       continue;
     }
+    if (m.msg_type === "asset") {
+      currentTools = null;
+      list.push({ id: ++seq, kind: "info", content: `素材编排：${m.content}`, collapsed: false });
+      continue;
+    }
     if (m.msg_type === "error") {
       currentTools = null;
       list.push({ id: ++seq, kind: "error", content: m.content, collapsed: false });
@@ -1212,6 +1217,16 @@ function watchGeneration(genId: number) {
       push({ kind: "file", detail: path, content, codeOpen: Boolean(content) });
     }
     bumpStream();
+  });
+
+  eventSource.addEventListener("asset_collection_started", (e) => {
+    const event = JSON.parse((e as MessageEvent).data) as SseEvent;
+    push({ kind: "info", content: `正在检索素材：${String(event.query || "")}`, collapsed: false });
+  });
+
+  eventSource.addEventListener("asset_collection_completed", (e) => {
+    const event = JSON.parse((e as MessageEvent).data) as SseEvent;
+    push({ kind: "info", content: `素材编排：${String(event.message || "任务完成")}`, collapsed: false });
   });
 
   eventSource.addEventListener("build_log", (e) => {

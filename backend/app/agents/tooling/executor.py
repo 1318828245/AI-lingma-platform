@@ -20,6 +20,9 @@ class ToolExecutionContext:
     workspace: Path
     output_guard: Callable[[str, str], None] | None = None
     on_file_written: Callable[[str, str], Awaitable[None]] | None = None
+    generation_id: int | None = None
+    session_id: int | None = None
+    on_asset_event: Callable[[dict], Awaitable[None]] | None = None
     command_runner: Callable[[list[str] | str, Path, int], Awaitable[tuple[int, str]]] = run_command
 
 
@@ -52,6 +55,20 @@ async def execute_tool(call: ToolCall, context: ToolExecutionContext) -> ToolRes
             if context.on_file_written:
                 await context.on_file_written(path, written)
             return ToolResult(True, {"path": path})
+        if call.name == "collect_assets":
+            from app.services.assets import collect_assets
+
+            result = await collect_assets(
+                project_id=context.project_id,
+                generation_id=context.generation_id,
+                session_id=context.session_id,
+                kind=str(args["kind"]),
+                query=str(args["query"]),
+                usage_role=str(args.get("usage_role") or "decorative"),
+                orientation=str(args.get("orientation") or "landscape"),
+                emit=context.on_asset_event,
+            )
+            return ToolResult(True, result)
         if call.name == "run_command":
             command = args.get("command") or []
             if get_settings().command_mode != "shell" and isinstance(command, str):

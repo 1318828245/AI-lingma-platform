@@ -9,6 +9,7 @@ from app.models.template import Template
 from app.models.user import User
 from app.schemas.project import ProjectCreate, ProjectOut, ProjectUpdate
 from app.services.project import create_project, delete_project, get_owned_project, project_workspace
+from app.services.assets import list_project_assets
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -54,6 +55,16 @@ def get_project(
     db: Session = Depends(get_db),
 ):
     return ProjectOut.model_validate(get_owned_project(db, project_id, user.id))
+
+
+@router.get("/{project_id}/assets")
+def list_assets(
+    project_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    get_owned_project(db, project_id, user.id)
+    return {"assets": list_project_assets(db, project_id)}
 
 
 @router.patch("/{project_id}", response_model=ProjectOut)

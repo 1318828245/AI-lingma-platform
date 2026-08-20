@@ -359,6 +359,9 @@ async def run_generation_agent(
                         workspace=workspace,
                         output_guard=lambda path, content: _output_guardrail_check(state, path, content),
                         on_file_written=on_file_written,
+                        generation_id=state["generation_id"],
+                        session_id=state["session_id"],
+                        on_asset_event=lambda event: _emit(state, event),
                         command_runner=run_command,
                     ),
                 )

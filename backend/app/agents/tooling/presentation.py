@@ -8,12 +8,16 @@ def display_args(call: ToolCall) -> dict:
         return {"path": call.arguments.get("path", "")}
     if call.name == "run_command":
         return {"command": call.arguments.get("command", [])}
+    if call.name == "collect_assets":
+        return {"kind": call.arguments.get("kind", ""), "query": call.arguments.get("query", "")}
     return {}
 
 
 def display_detail(call: ToolCall) -> str:
     if call.name in {"read_file", "write_file", "edit_file"}:
         return str(call.arguments.get("path", ""))
+    if call.name == "collect_assets":
+        return str(call.arguments.get("query", ""))
     command = call.arguments.get("command")
     return command if isinstance(command, str) else " ".join(command or [])
 

@@ -14,6 +14,13 @@ def validate_tool_call(agent: str, call: ToolCall) -> str | None:
         return f"Invalid tool arguments: {call.parse_error}"
     if call.name not in allowed:
         return f"Tool '{call.name}' is not allowed for {agent}"
+    if call.name == "collect_assets":
+        kind = str(call.arguments.get("kind") or "")
+        query = call.arguments.get("query")
+        if kind not in {"icon", "photo", "illustration"}:
+            return "Asset kind must be icon, photo, or illustration"
+        if not isinstance(query, str) or not query.strip() or len(query) > 180:
+            return "Asset query must be a non-empty string of at most 180 characters"
     path = str(call.arguments.get("path") or "")
     if path:
         parts = set(path.replace("\\", "/").split("/"))
