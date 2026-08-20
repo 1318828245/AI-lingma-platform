@@ -1,3 +1,6 @@
+import re
+
+
 def test_list_templates(client, admin_headers):
     resp = client.get("/api/templates", headers=admin_headers)
     assert resp.status_code == 200
@@ -33,7 +36,8 @@ def test_create_project_from_template(client, admin_headers):
     assert (ws / "style.css").exists()
     assert (ws / "script.js").exists()
     assert ws.parent.name == "multifile"
-    assert not ws.name.isdigit()
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-[0-9a-f]{8}", ws.name)
+    assert ws.name.isascii()
 
 
 def test_create_blank_project(client, admin_headers):
@@ -49,7 +53,7 @@ def test_create_blank_project(client, admin_headers):
 
     workspace = project_workspace(project["id"])
     assert workspace.parent.name == "vue"
-    assert not workspace.name.isdigit()
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-[0-9a-f]{8}", workspace.name)
 
 
 def test_project_name_cannot_be_only_digits(client, admin_headers):

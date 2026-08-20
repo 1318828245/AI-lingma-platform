@@ -7,6 +7,17 @@
 
 已实现：后端骨架（FastAPI + SQLAlchemy 2.x）、全部数据模型、JWT 认证（bcrypt）、内置管理员、3 个种子模板、项目/会话/模板/管理员基础 API、**生成工作流（LangGraph：解析→规划→生成→构建→修复）+ SSE 进度流 + 任务取消/超时/恢复**、**Vue 3 前端（登录/项目列表/生成对话/实时预览）+ 服务端预览代理**。M1 里程碑已完成。
 
+### 模型与工具调用边界
+
+- `services/model/`：以 `ModelRequest`、`ModelResponse`、`ModelToolCall` 作为供应商无关契约；当前 `OpenAICompatibleProvider` 负责 Chat Completions 请求与流式增量聚合。
+- `services/llm.py`：保留业务门面与 mock 模式，不再直接承担 HTTP/SSE 协议解析。
+- `agents/tooling/`：集中维护工具 schema、调用/结果契约、Agent 权限策略、执行器和安全展示摘要。
+- 生成 Agent 可调用文件与构建工具；修改 Agent 不允许运行命令。所有工具调用均先经参数、敏感路径与写入大小校验，再进入副作用执行。
+
+### 存储命名
+
+项目显示名称可以使用中文，但所有文件系统产物只使用 `yyyy-mm-dd-hh-mm-ss-random`。同一个标识同时用于 `storage/workspaces/` 下的工作区、`storage/thumbnails/<id>.png` 和 `storage/versions/<id>/`；版本快照子目录也使用同样格式，绝不使用项目数字 ID。
+
 ## 快速体验生成流程
 
 1. 启动后端（见下）
@@ -81,7 +92,7 @@ cd backend
 python -m pytest -q
 ```
 
-当前代码包含 63 个后端测试，最近一次 `python -m pytest -q` 全部通过；前端 `npm run build` 已包含 `vue-tsc --noEmit` 类型检查并通过。后端测试配置已关闭不必要的 pytest 缓存插件，避免在当前工作区文件系统上测试完成后卡在收尾阶段。
+当前代码包含 70 个后端测试，最近一次 `python -m pytest -q` 全部通过；前端 `npm run build` 已包含 `vue-tsc --noEmit` 类型检查并通过。后端测试配置已关闭不必要的 pytest 缓存插件，避免在当前工作区文件系统上测试完成后卡在收尾阶段。
 
 当前 M2-1/M2-2/M2-3 已完成：生成或修改成功会自动创建项目版本快照；提供版本列表、版本 diff、回滚 API；预览支持点选元素、采集元素快照并提交修改；真实 LLM 配置下由修改 Agent 通过工具循环完成文本、样式或结构局部编辑，未配置 LLM 时使用 Mock 修改器离线回归。
 

@@ -156,6 +156,10 @@ def test_screenshot_generated_with_mock_capture(client, admin_headers, monkeypat
     )
     assert resp.status_code == 200
     assert resp.headers["content-type"] == "image/png"
+    from app.core.config import get_settings
+
+    thumbnails = list((get_settings().storage_dir / "thumbnails").glob("*.png"))
+    assert any(path.stem == project["slug"] for path in thumbnails)
 
 
 def test_screenshot_fallback_when_capture_fails(client, admin_headers, monkeypatch):

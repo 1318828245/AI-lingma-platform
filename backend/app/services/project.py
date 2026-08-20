@@ -4,6 +4,7 @@ import hashlib
 import re
 import shutil
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import HTTPException
@@ -26,11 +27,25 @@ from app.models.template import Template
 from app.schemas.project import ProjectCreate
 
 
-def make_project_slug(name: str) -> str:
-    base = re.sub(r"[^\w\u4e00-\u9fff]+", "-", name.strip().lower()).strip("-_.")
-    if len(base) < 2 or base.isdigit():
-        base = "project"
-    return f"{base[:40]}-{uuid.uuid4().hex[:6]}"
+_WORKSPACE_NAME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}-[0-9a-f]{8}$")
+
+
+def make_project_slug(_name: str = "") -> str:
+    """Create an ASCII-only storage identity independent from the display name."""
+    return f"{datetime.now():%Y-%m-%d-%H-%M-%S}-{uuid.uuid4().hex[:8]}"
+
+
+def workspace_name(project: Project) -> str:
+    """Return the canonical storage identity, including a stable legacy fallback."""
+    if _WORKSPACE_NAME_RE.fullmatch(project.slug):
+        return project.slug
+    created = project.created_at or datetime.now()
+    digest = hashlib.sha256(f"{project.id}:{project.slug}".encode()).hexdigest()[:8]
+    return f"{created:%Y-%m-%d-%H-%M-%S}-{digest}"
+
+
+def project_thumbnail_path(project: Project) -> Path:
+    return get_settings().storage_dir / "thumbnails" / f"{workspace_name(project)}.png"
 
 
 def workspace_category(tech_stack: str) -> str:
@@ -38,23 +53,42 @@ def workspace_category(tech_stack: str) -> str:
 
 
 def project_workspace(project: Project | int) -> Path:
-    """返回项目工作区；旧的纯数字目录保留为只读兼容回退。"""
+    """Return the canonical ASCII-only workspace path."""
     settings = get_settings()
     if isinstance(project, Project):
-        project_id = project.id
         tech_stack = project.tech_stack
-        slug = project.slug
+        name = workspace_name(project)
     else:
         project_id = project
         with SessionLocal() as db:
             row = db.get(Project, project_id)
             if row is None:
-                return settings.workspace_dir / str(project_id)
+                return settings.workspace_dir / "multifile" / "missing-project"
             tech_stack = row.tech_stack
-            slug = row.slug
-    workspace = settings.workspace_dir / workspace_category(tech_stack) / slug
-    legacy_workspace = settings.workspace_dir / str(project_id)
-    return legacy_workspace if legacy_workspace.exists() and not workspace.exists() else workspace
+            name = workspace_name(row)
+    return settings.workspace_dir / workspace_category(tech_stack) / name
+
+
+def migrate_workspace_layout() -> int:
+    """Move pre-standard workspaces into their canonical ASCII-only locations."""
+    settings = get_settings()
+    moved = 0
+    with SessionLocal() as db:
+        for project in db.query(Project).all():
+            target = project_workspace(project)
+            if target.exists():
+                continue
+            category = workspace_category(project.tech_stack)
+            candidates = [
+                settings.workspace_dir / category / project.slug,
+                settings.workspace_dir / str(project.id),
+            ]
+            source = next((path for path in candidates if path.exists()), None)
+            if source is not None:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(source), str(target))
+                moved += 1
+    return moved
 
 
 def _content_hash(content: bytes) -> str:
@@ -202,3 +236,8 @@ def delete_project(db: Session, project: Project) -> None:
     ws = project_workspace(project).resolve()
     if ws.is_relative_to(settings.workspace_dir.resolve()) and ws.exists():
         shutil.rmtree(ws)
+    project_thumbnail_path(project).unlink(missing_ok=True)
+    (settings.storage_dir / "thumbnails" / f"{project_id}.png").unlink(missing_ok=True)
+    for root in (settings.versions_dir / workspace_name(project), settings.versions_dir / str(project_id)):
+        if root.is_relative_to(settings.versions_dir.resolve()) and root.exists():
+            shutil.rmtree(root)

@@ -18,7 +18,7 @@ from app.models.file import File
 from app.models.project import Project
 from app.models.user import User
 from app.services.screenshot import capture_screenshot
-from app.services.project import get_owned_project, project_workspace
+from app.services.project import get_owned_project, project_thumbnail_path, project_workspace
 
 router = APIRouter(tags=["preview"])
 
@@ -131,7 +131,7 @@ async def project_screenshot(
     if not index.exists():
         raise HTTPException(status_code=404, detail="项目尚未生成可预览内容")
 
-    thumb = get_settings().storage_dir / "thumbnails" / f"{project_id}.png"
+    thumb = project_thumbnail_path(project)
     if force and thumb.exists():
         thumb.unlink(missing_ok=True)
     index_mtime = index.stat().st_mtime

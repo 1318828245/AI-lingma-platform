@@ -18,6 +18,12 @@ def test_project_version_list_diff_and_rollback(client, admin_headers):
         )
         db.commit()
         version_id = version.id
+        storage_paths = [metadata["storage_path"] for metadata in version.snapshot_manifest_json.values()]
+        assert storage_paths
+        storage_parts = storage_paths[0].split("/")
+        assert storage_parts[0] == created["slug"]
+        assert all(part.isascii() for part in storage_parts[:2])
+        assert storage_parts[1].count("-") == 6
         write_project_file(db, project_id, "index.html", "<h1>第二版</h1>")
         write_project_file(db, project_id, "extra.txt", "临时文件")
         db.commit()

@@ -3,6 +3,8 @@
 import difflib
 import hashlib
 import shutil
+import uuid
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import HTTPException
@@ -11,8 +13,9 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.models.file import File
 from app.models.file_version import FileVersion
+from app.models.project import Project
 from app.models.project_version import ProjectVersion
-from app.services.project import project_workspace
+from app.services.project import project_workspace, workspace_name
 
 
 def _safe_relative(path: str) -> str:
@@ -22,8 +25,12 @@ def _safe_relative(path: str) -> str:
     return clean
 
 
-def _version_root(project_id: int, version_no: int) -> Path:
-    root = get_settings().versions_dir / str(project_id) / f"v{version_no}"
+def _version_root(db: Session, project_id: int) -> Path:
+    project = db.get(Project, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    snapshot_name = f"{datetime.now():%Y-%m-%d-%H-%M-%S}-{uuid.uuid4().hex[:8]}"
+    root = get_settings().versions_dir / workspace_name(project) / snapshot_name
     root.mkdir(parents=True, exist_ok=True)
     return root
 
@@ -60,7 +67,7 @@ def snapshot_project(
     summary: str | None = None,
 ) -> ProjectVersion:
     version_no = _next_version_no(db, project_id)
-    root = _version_root(project_id, version_no)
+    root = _version_root(db, project_id)
     versions_dir = get_settings().versions_dir.resolve()
     manifest: dict[str, dict[str, int | str]] = {}
     file_rows = {

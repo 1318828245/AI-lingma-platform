@@ -2,11 +2,15 @@
 
 ## 最新同步（2026-08-19）
 
+- [x] 存储命名统一：工作区、缩略图、版本根目录均使用项目的 ASCII `yyyy-mm-dd-hh-mm-ss-random` 标识；版本快照子目录也使用同一格式，启动时自动迁移旧中文或数字工作区。
+
+- [x] 模型与工具调用分层：`services/model` 统一模型 Provider 契约，`agents/tooling` 统一 schema、调用/结果、策略和执行；生成与修改 Agent 通过同一工具链运行，修改 Agent 无命令权限。
+
 - [x] 工作区按技术栈分流：Vue 项目位于 `storage/workspaces/vue/<slug>`，HTML/多文件项目位于 `storage/workspaces/multifile/<slug>`；新建与重命名均拒绝纯数字项目名，slug 不再使用简单数字。
 - [x] Vite 构建追加 `--base=./`，预览服务优先托管 `dist`，解决嵌入式预览中资源请求落到平台根路径而导致白屏的问题。
 - [x] 生成 Agent 的命令提示与运行时校验已限制为 Windows 平台托管预览模式：允许 `npm install` 与 `npm run build`，拒绝 `npm run dev`、Linux `timeout/sleep`、`/tmp`、重定向和后台命令。
 - [x] 生成工作台增加非阻断阶段进度条；历史回放不再把阶段事件混入聊天消息。右侧预览支持生成中、未生成、失败、可预览状态，并修复 ready iframe 被空态覆盖的问题。
-- [x] 验证：backend `python -B -m pytest -q` 通过（67 passed）；frontend `npm run build` 通过（含 `vue-tsc --noEmit`）。
+- [x] 验证：backend `python -B -m pytest -q` 通过（70 passed）；frontend `npm run build` 通过（含 `vue-tsc --noEmit`）。
 更新于：2026-08-18（以当前代码核对）
 
 ## 当前里程碑

@@ -6,14 +6,31 @@ P0 默认 mock 执行器（离线可跑通整条流水线）；配置 llm_base_u
 
 import json
 
-import httpx
-
 from app.core.config import get_settings
+from app.services.model import ModelRequest, ModelResponse, ModelToolCall, OpenAICompatibleProvider
 
 
 class LLMClient:
     def __init__(self) -> None:
         self.settings = get_settings()
+        self.provider = OpenAICompatibleProvider(
+            self.settings.llm_base_url, self.settings.llm_api_key
+        )
+
+    def _request(
+        self, messages: list[dict], tools: list[dict] | None = None,
+        json_mode: bool = False, temperature: float = 0.2, stream: bool = False,
+    ) -> ModelRequest:
+        return ModelRequest(
+            model=self.settings.llm_model,
+            messages=messages,
+            tools=tools or [],
+            json_mode=json_mode,
+            temperature=temperature,
+            stream=stream,
+            reasoning_effort=self.settings.llm_reasoning_effort,
+            thinking_enabled=self.settings.llm_thinking_enabled,
+        )
 
     @property
     def mode(self) -> str:
@@ -31,23 +48,10 @@ class LLMClient:
         json_mode: bool = False,
         temperature: float = 0.2,
     ) -> str:
-        payload = {
-            "model": self.settings.llm_model,
-            "messages": messages,
-            "temperature": temperature,
-        }
-        if self.settings.llm_reasoning_effort:
-            payload["reasoning_effort"] = self.settings.llm_reasoning_effort
-        if self.settings.llm_thinking_enabled:
-            payload["thinking"] = {"type": "enabled"}
-        if json_mode:
-            payload["response_format"] = {"type": "json_object"}
-        url = self.settings.llm_base_url.rstrip("/") + "/chat/completions"
-        headers = {"Authorization": f"Bearer {self.settings.llm_api_key}"}
-        async with httpx.AsyncClient(timeout=120) as client:
-            resp = await client.post(url, json=payload, headers=headers)
-            resp.raise_for_status()
-            return resp.json()["choices"][0]["message"]["content"]
+        response = await self.provider.complete(
+            self._request(messages, json_mode=json_mode, temperature=temperature)
+        )
+        return response.content
 
     async def complete_with_tools(
         self,
@@ -74,24 +78,7 @@ class LLMClient:
                 ],
                 "usage": {"prompt_tokens": 0, "completion_tokens": 0},
             }
-        payload = {
-            "model": self.settings.llm_model,
-            "messages": messages,
-            "temperature": temperature,
-            "tools": tools,
-            "tool_choice": "auto",
-        }
-        if self.settings.llm_reasoning_effort:
-            payload["reasoning_effort"] = self.settings.llm_reasoning_effort
-        if self.settings.llm_thinking_enabled:
-            payload["thinking"] = {"type": "enabled"}
-        url = self.settings.llm_base_url.rstrip("/") + "/chat/completions"
-        headers = {"Authorization": f"Bearer {self.settings.llm_api_key}"}
-        async with httpx.AsyncClient(timeout=180) as client:
-            resp = await client.post(url, json=payload, headers=headers)
-            resp.raise_for_status()
-            body = resp.json()
-        return body["choices"][0]["message"]
+        return (await self.provider.complete(self._request(messages, tools, temperature=temperature))).to_wire()
 
     async def stream_complete_with_tools(
         self,
@@ -133,78 +120,12 @@ class LLMClient:
                 "usage": {"prompt_tokens": 0, "completion_tokens": 0},
             }
 
-        payload = {
-            "model": self.settings.llm_model,
-            "messages": messages,
-            "temperature": temperature,
-            "tools": tools,
-            "tool_choice": "auto",
-            "stream": True,
-            "stream_options": {"include_usage": True},
-        }
-        if self.settings.llm_reasoning_effort:
-            payload["reasoning_effort"] = self.settings.llm_reasoning_effort
-        if self.settings.llm_thinking_enabled:
-            payload["thinking"] = {"type": "enabled"}
-
-        url = self.settings.llm_base_url.rstrip("/") + "/chat/completions"
-        headers = {"Authorization": f"Bearer {self.settings.llm_api_key}"}
-        message: dict = {
-            "content": "",
-            "reasoning_content": "",
-            "tool_calls": [],
-            "usage": {},
-        }
-        async with httpx.AsyncClient(timeout=300) as client:
-            async with client.stream(
-                "POST", url, json=payload, headers=headers
-            ) as resp:
-                resp.raise_for_status()
-                async for line in resp.aiter_lines():
-                    if not line.startswith("data:"):
-                        continue
-                    data = line[len("data:"):].strip()
-                    if data == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(data)
-                    except json.JSONDecodeError:
-                        continue
-                    if chunk.get("usage"):
-                        message["usage"] = chunk["usage"]
-                    choices = chunk.get("choices") or []
-                    if not choices:
-                        continue
-                    delta = choices[0].get("delta") or {}
-                    reasoning = delta.get("reasoning_content")
-                    if reasoning:
-                        message["reasoning_content"] += reasoning
-                        if on_reasoning:
-                            await on_reasoning(reasoning)
-                    text = delta.get("content")
-                    if text:
-                        message["content"] += text
-                        if on_content:
-                            await on_content(text)
-                    for tool_call in delta.get("tool_calls") or []:
-                        index = tool_call.get("index", 0)
-                        while len(message["tool_calls"]) <= index:
-                            message["tool_calls"].append(
-                                {
-                                    "id": "",
-                                    "type": "function",
-                                    "function": {"name": "", "arguments": ""},
-                                }
-                            )
-                        target = message["tool_calls"][index]
-                        if tool_call.get("id"):
-                            target["id"] = tool_call["id"]
-                        fn = tool_call.get("function") or {}
-                        if fn.get("name"):
-                            target["function"]["name"] += fn["name"]
-                        if fn.get("arguments"):
-                            target["function"]["arguments"] += fn["arguments"]
-        return message
+        response = await self.provider.stream(
+            self._request(messages, tools, temperature=temperature, stream=True),
+            on_reasoning=on_reasoning,
+            on_content=on_content,
+        )
+        return response.to_wire()
 
     async def parse_requirement(self, requirement: str, tech_stack: str) -> dict:
         if self.mode == "mock":

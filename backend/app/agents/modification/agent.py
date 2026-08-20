@@ -4,6 +4,10 @@ import json
 from pathlib import Path
 
 from app.agents.modification.state import ModificationState
+from app.agents.tooling.contracts import ToolCall
+from app.agents.tooling.definitions import MODIFICATION_TOOL_NAMES, tool_schemas
+from app.agents.tooling.executor import ToolExecutionContext, execute_tool
+from app.agents.tooling.presentation import display_args, display_detail, error_hint
 from app.agents.tools import edit_file, list_files, read_file, write_file
 from app.core.database import SessionLocal
 from app.services.events import get_broker
@@ -76,6 +80,8 @@ MODIFICATION_TOOLS = [
     },
 ]
 
+MODIFICATION_TOOLS = tool_schemas(MODIFICATION_TOOL_NAMES)
+
 
 def _safe_output(content: str) -> None:
     lowered = content.lower()
@@ -133,48 +139,27 @@ async def run_modification_agent(state: ModificationState) -> dict:
             messages.append({"role": "assistant", "content": "请使用工具完成修改。"})
             continue
         messages.append({"role": "assistant", "content": message.get("content") or "", "tool_calls": tool_calls})
-        for call in tool_calls:
-            fn = call.get("function") or {}
-            name = fn.get("name", "")
-            try:
-                args = json.loads(fn.get("arguments") or "{}")
-            except json.JSONDecodeError:
-                args = {}
-            if name == "finish":
-                return {"summary": str(args.get("summary") or "修改完成"), "changed_files": changed, "token_usage": usage_total}
-            await _emit(state, {"type": "tool_call_started", "tool": name, "args": {"path": args.get("path", "")} })
-            ok = True
-            error = ""
-            try:
-                if name == "list_files":
-                    result = json.dumps(list_files(workspace), ensure_ascii=False)
-                elif name == "read_file":
-                    result = json.dumps({"ok": True, "content": read_file(workspace, args["path"])[:10000]}, ensure_ascii=False)
-                elif name == "edit_file":
-                    _safe_output(str(args.get("new", "")))
-                    with SessionLocal() as db:
-                        edit_file(db, state["project_id"], workspace, args["path"], args["old"], args["new"])
-                    path = str(args["path"])
-                    if path not in changed:
-                        changed.append(path)
-                    content = read_file(workspace, path)
-                    await _emit(state, {"type": "file_written", "path": path, "content": content[:16000]})
-                    result = json.dumps({"ok": True, "path": path}, ensure_ascii=False)
-                elif name == "write_file":
-                    _safe_output(str(args.get("content", "")))
-                    with SessionLocal() as db:
-                        write_file(db, state["project_id"], workspace, args["path"], args["content"])
-                    path = str(args["path"])
-                    if path not in changed:
-                        changed.append(path)
-                    await _emit(state, {"type": "file_written", "path": path, "content": str(args["content"])[:16000]})
-                    result = json.dumps({"ok": True, "path": path}, ensure_ascii=False)
-                else:
-                    raise ValueError(f"不支持的修改工具：{name}")
-            except Exception as exc:  # noqa: BLE001
-                ok = False
-                error = str(exc)
-                result = json.dumps({"error": error}, ensure_ascii=False)
-            await _emit(state, {"type": "tool_call_completed", "tool": name, "ok": ok, "detail": str(args.get("path", "")), "error": error[:300]})
-            messages.append({"role": "tool", "tool_call_id": call.get("id", f"call_{step}_{name}"), "content": result[:6000]})
+        for index, raw_call in enumerate(tool_calls):
+            call = ToolCall.from_wire(raw_call, f"call_{step}_{index}")
+            if call.name == "finish":
+                return {"summary": str(call.arguments.get("summary") or "修改完成"), "changed_files": changed, "token_usage": usage_total}
+            await _emit(state, {"type": "tool_call_started", "tool": call.name, "tool_call_id": call.id, "args": display_args(call)})
+
+            async def on_file_written(path: str, content: str) -> None:
+                if path not in changed:
+                    changed.append(path)
+                await _emit(state, {"type": "file_written", "path": path, "content": content[:16000]})
+
+            result = await execute_tool(
+                call,
+                ToolExecutionContext(
+                    agent="modification",
+                    project_id=state["project_id"],
+                    workspace=workspace,
+                    output_guard=lambda _path, content: _safe_output(content),
+                    on_file_written=on_file_written,
+                ),
+            )
+            await _emit(state, {"type": "tool_call_completed", "tool": call.name, "tool_call_id": call.id, "ok": result.ok, "detail": display_detail(call), "error": error_hint(result)})
+            messages.append({"role": "tool", "tool_call_id": call.id, "content": result.to_message_content()})
     raise RuntimeError("修改 Agent 未在工具轮次内完成")

@@ -16,6 +16,10 @@ from app.agents.generation.nodes import (
 )
 from app.agents.generation.prompts import PROMPT_GENERATION
 from app.agents.generation.state import GenerationState
+from app.agents.tooling.contracts import ToolCall, ToolResult
+from app.agents.tooling.definitions import GENERATION_TOOL_NAMES, tool_schemas
+from app.agents.tooling.executor import ToolExecutionContext, execute_tool, is_unsupported_preview_command
+from app.agents.tooling.presentation import display_args, display_detail, error_hint
 from app.agents.tools import edit_file, list_files, read_file, write_file
 from app.core.config import get_settings
 from app.core.database import SessionLocal
@@ -118,6 +122,9 @@ TOOL_SCHEMAS = [
         },
     },
 ]
+
+# Kept as a module-level alias for callers/tests; schemas now have one source of truth.
+TOOL_SCHEMAS = tool_schemas(GENERATION_TOOL_NAMES)
 
 
 def _build_system_prompt(state: GenerationState) -> str:
@@ -316,19 +323,13 @@ async def run_generation_agent(
         }
         messages.append(assistant_msg)
 
-        for tool_call in tool_calls:
-            fn = tool_call.get("function") or {}
-            name = fn.get("name", "")
-            raw_args = fn.get("arguments") or "{}"
-            try:
-                args = json.loads(raw_args)
-                if not isinstance(args, dict):
-                    args = {"_raw": raw_args}
-            except json.JSONDecodeError:
-                args = {"_parse_error": raw_args}
+        for tool_index, tool_call in enumerate(tool_calls):
+            call = ToolCall.from_wire(tool_call, f"call_{step}_{tool_index}")
+            name = call.name
+            args = call.arguments
 
             if name == "finish":
-                summary = str(args.get("summary", "")).strip()
+                summary = str(call.arguments.get("summary", "")).strip()
                 state["summary"] = summary
                 files = list_files(workspace)
                 state["files"] = files
@@ -347,59 +348,50 @@ async def run_generation_agent(
                 }
 
             try:
-                error_hint = ""
-                if name == "run_command" and isinstance(args.get("command"), str):
-                    import shlex
-
-                    args["command"] = shlex.split(args["command"])
-                safe_args = _safe_tool_args(name, args)
                 await _emit(
                     state,
                     {
                         "type": "tool_call_started",
                         "tool": name,
-                        "args": safe_args,
+                        "tool_call_id": call.id,
+                        "args": display_args(call),
                     },
                 )
-                result = await _execute_tool(state, name, args)
+                async def on_file_written(path: str, content: str) -> None:
+                    await _emit(state, {"type": "file_written", "path": path, "content": content[:16000]})
+                execution = await execute_tool(
+                    call,
+                    ToolExecutionContext(
+                        agent="generation",
+                        project_id=state["project_id"],
+                        workspace=workspace,
+                        output_guard=lambda path, content: _output_guardrail_check(state, path, content),
+                        on_file_written=on_file_written,
+                        command_runner=run_command,
+                    ),
+                )
             except GenerationBlocked as exc:
-                result = json.dumps({"error": str(exc)}, ensure_ascii=False)
-                ok = False
-                error_hint = str(exc)
+                execution = ToolResult(False, error=str(exc))
             except GenerationCancelled:
                 raise
             except Exception as exc:
-                result = json.dumps(
-                    {"error": f"{type(exc).__name__}: {exc}"}, ensure_ascii=False
-                )
-                ok = False
-                error_hint = str(exc)
-            else:
-                ok = _is_ok(result)
-                if not ok:
-                    try:
-                        data = json.loads(result)
-                        if isinstance(data, dict):
-                            error_hint = str(data.get("error") or "")
-                            output = str(data.get("output") or "")
-                            if data.get("exit_code") not in (None, 0) and output:
-                                error_hint = (error_hint + " " + output[-200:]).strip()
-                    except json.JSONDecodeError:
-                        error_hint = result[:200]
+                execution = ToolResult(False, error=f"{type(exc).__name__}: {exc}")
+            result = execution.to_message_content(4000)
             await _emit(
                 state,
                 {
                     "type": "tool_call_completed",
                     "tool": name,
-                    "ok": ok,
-                    "detail": _tool_result_detail(name, args),
-                    "error": error_hint[:300],
+                    "tool_call_id": call.id,
+                    "ok": execution.ok,
+                    "detail": display_detail(call),
+                    "error": error_hint(execution),
                 },
             )
             messages.append(
                 {
                     "role": "tool",
-                    "tool_call_id": tool_call.get("id", f"call_{step}_{name}"),
+                    "tool_call_id": call.id,
                     "content": result[:4000],
                 }
             )
@@ -417,15 +409,7 @@ def _safe_tool_args(name: str, args: dict) -> dict:
 
 
 def _is_unsupported_preview_command(command: str) -> bool:
-    lowered = command.lower()
-    return (
-        "npm run dev" in lowered
-        or "timeout " in lowered
-        or "sleep " in lowered
-        or "/tmp/" in lowered
-        or ">" in command
-        or (" &" in command and "&&" not in command)
-    )
+    return is_unsupported_preview_command(command)
 
 
 def _tool_result_detail(name: str, args: dict) -> str:

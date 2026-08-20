@@ -1,5 +1,18 @@
 # 变更记录
 
+## 2026-08-20：统一 ASCII 存储命名
+
+- 新项目工作区标识改为 `yyyy-mm-dd-hh-mm-ss-random`，与项目显示名完全解耦。
+- 缩略图和版本快照改用同一工作区标识；版本快照子目录也不再使用 `v1` 或项目数字 ID。
+- 服务启动时迁移旧的中文或数字工作区目录到规范路径，并兼容清理旧缩略图和版本目录。
+
+## 2026-08-20：模型与 Agent 工具调用分层
+
+- 新增 Provider 无关的模型请求、响应和工具调用契约；OpenAI 兼容 HTTP/SSE 协议解析移入独立 Provider。
+- 新增统一 Agent 工具 schema、`ToolCall`/`ToolResult`、策略校验和执行器；生成与修改 Agent 共用该调用链。
+- 修改 Agent 明确禁止命令执行；敏感路径、越权工具、无效参数与过大写入会在执行前拦截。
+- 验证：`python -B -m pytest -q` 通过（70 passed）。
+
 ## 2026-08-19：生成工作区与实时预览体验
 
 - 将生成项目工作区按技术栈隔离为 `storage/workspaces/vue/<slug>` 和 `storage/workspaces/multifile/<slug>`，并禁止使用纯数字项目名称。
