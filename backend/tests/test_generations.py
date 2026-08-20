@@ -61,6 +61,26 @@ def test_generation_html_end_to_end(client, admin_headers):
     assert "assistant" in roles
 
 
+def test_active_generation_is_scoped_to_its_project(client, admin_headers):
+    from app.core.database import SessionLocal
+    from app.models.generation import Generation
+    from app.models.session import Session as ChatSession
+
+    project = _create_project(client, admin_headers, "Active generation")
+    other = _create_project(client, admin_headers, "Other project")
+    with SessionLocal() as db:
+        session = db.query(ChatSession).filter(ChatSession.project_id == project["id"]).one()
+        active = Generation(project_id=project["id"], session_id=session.id, status="running", requirement="resume")
+        db.add(active)
+        db.commit()
+        active_id = active.id
+
+    response = client.get(f"/api/projects/{project['id']}/generations/active", headers=admin_headers)
+    assert response.status_code == 200
+    assert response.json()["id"] == active_id
+    assert client.get(f"/api/projects/{other['id']}/generations/active", headers=admin_headers).json() is None
+
+
 def test_generation_repair_loop(client, admin_headers):
     project = _create_project(
         client, admin_headers, "修复看板", template="任务看板", tech_stack="vue3"

@@ -16,6 +16,7 @@ from app.models.modification import Modification
 from app.models.project import Project
 from app.services.events import get_broker
 from app.services.project import project_workspace, write_project_file
+from app.services.sandbox import validate_build
 from app.services.version import snapshot_project
 from app.services.llm import LLMClient
 
@@ -54,7 +55,7 @@ def _publish_sync(session_id: int, modification_id: int, event: dict) -> None:
 
 async def _publish(session_id: int, modification_id: int, event: dict) -> None:
     await get_broker().publish(modification_id, {**event, "modification_id": modification_id})
-    _publish_sync(session_id, modification_id, event)
+    _publish_sync(session_id, modification_id, {**event, "modification_id": modification_id})
 
 
 def _check_cancel(modification_id: int) -> None:
@@ -67,8 +68,17 @@ def _check_cancel(modification_id: int) -> None:
 def _candidate_files(workspace: Path, related_files: list[str]) -> list[str]:
     allowed = set(list_files(workspace))
     requested = [path.replace("\\", "/").lstrip("/") for path in related_files]
-    selected = [path for path in requested if path in allowed]
-    return selected or sorted(path for path in allowed if Path(path).suffix.lower() in {".html", ".vue", ".jsx", ".tsx", ".js"})
+    artifact_parts = {"dist", "build", ".vite", "node_modules"}
+    selected = [
+        path for path in requested
+        if path in allowed and not set(path.split("/")) & artifact_parts
+    ]
+    return selected or sorted(
+        path
+        for path in allowed
+        if Path(path).suffix.lower() in {".html", ".vue", ".jsx", ".tsx", ".js"}
+        and not set(path.replace("\\", "/").split("/")) & {"dist", "build", ".vite", "node_modules"}
+    )
 
 
 def _locate_file(workspace: Path, snapshot: dict, related_files: list[str]) -> tuple[str, str]:
@@ -153,6 +163,7 @@ async def run_modification_task(modification_id: int) -> None:
             modification.started_at = datetime.now()
             db.commit()
             workspace = project_workspace(project)
+            tech_stack = project.tech_stack
             snapshot = modification.element_snapshot or {}
             related_files = modification.related_files_json or []
             instruction = modification.instruction
@@ -165,6 +176,17 @@ async def run_modification_task(modification_id: int) -> None:
 
         await _publish(session_id, modification_id, {"type": "stage", "stage": "edit"})
         _check_cancel(modification_id)
+        # Capture the state immediately before editing so every successful
+        # modification has a deterministic undo target.
+        with SessionLocal() as db:
+            snapshot_project(
+                db,
+                modification.project_id,
+                source_type="modification_before",
+                source_id=modification_id,
+                summary="Modification pre-edit snapshot",
+            )
+            db.commit()
         if LLMClient().mode == "real":
             before_files = {
                 candidate: read_file(workspace, candidate)
@@ -196,6 +218,10 @@ async def run_modification_task(modification_id: int) -> None:
                 fromfile=f"before/{path}", tofile=f"after/{path}",
             ))}]
             summary = f"修改文本为：{new_text}"
+        if tech_stack.lower().startswith("vue"):
+            ok, _build_log, build_errors = await validate_build(workspace, tech_stack)
+            if not ok:
+                raise ValueError(f"修改后的预览构建失败：{'；'.join(build_errors[:3])}")
         with SessionLocal() as db:
             modification = db.get(Modification, modification_id)
             if modification is None:
@@ -204,20 +230,33 @@ async def run_modification_task(modification_id: int) -> None:
             modification.diff_json = {"files": file_diffs}
             modification.status = "succeeded"
             modification.finished_at = datetime.now()
-            snapshot_project(
+            version = snapshot_project(
                 db,
                 modification.project_id,
                 source_type="modification",
                 source_id=modification.id,
                 summary=summary[:500],
             )
+            version_id = version.id
+            version_no = version.version_no
+            modification.diff_json = {
+                "files": file_diffs,
+                "version_id": version_id,
+                "review_status": "pending",
+            }
             db.commit()
 
         for changed_path in changed_files:
             changed_content = read_file(workspace, changed_path)
             await _publish(session_id, modification_id, {"type": "file_written", "path": changed_path, "content": changed_content[:16000]})
         await _publish(session_id, modification_id, {"type": "diff", "files": file_diffs})
-        await _publish(session_id, modification_id, {"type": "completed", "status": "succeeded", "summary": summary})
+        await _publish(session_id, modification_id, {
+            "type": "completed",
+            "status": "succeeded",
+            "summary": summary,
+            "version_id": version_id,
+            "version_no": version_no,
+        })
     except ModificationCancelled:
         with SessionLocal() as db:
             modification = db.get(Modification, modification_id)

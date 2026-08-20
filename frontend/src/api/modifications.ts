@@ -21,6 +21,11 @@ export async function getModification(id: number): Promise<Modification> {
   return data;
 }
 
+export async function getActiveModification(projectId: number): Promise<Modification | null> {
+  const { data } = await api.get(`/projects/${projectId}/modifications/active`);
+  return data;
+}
+
 export function modificationEventUrl(id: number): string {
   const auth = useAuthStore();
   return `/api/modifications/${id}/events?token=${encodeURIComponent(auth.accessToken)}`;

@@ -28,12 +28,18 @@
       <aside class="chat-pane">
         <section class="panel stage-card">
           <div class="stage-head">
-            <span class="panel-title">构建流水线</span>
+            <span class="panel-title">{{ modificationActive ? "修改进度" : "构建流水线" }}</span>
             <span v-if="runningGen" class="mono stage-meta">
               第 {{ runningGen.build_attempt }} 次构建
             </span>
+            <span v-else-if="runningModification" class="mono stage-meta">正在编辑项目</span>
           </div>
-          <StageRail :stage="progressStage" />
+          <div v-if="modificationActive" class="modification-stage-rail">
+            <span :class="{ active: modificationStage === 'locate', done: modificationStage === 'edit' }">1. 定位源码</span>
+            <i />
+            <span :class="{ active: modificationStage === 'edit' }">2. 应用修改</span>
+          </div>
+          <StageRail v-else :stage="progressStage" />
           <el-alert
             v-if="runningGen?.error"
             :title="runningGen.error"
@@ -44,9 +50,9 @@
         </section>
 
         <section class="panel chat-card">
-          <div v-if="generationWaitingText" class="generation-status-beacon" role="status">
+          <div v-if="taskWaitingText" class="generation-status-beacon" role="status">
             <span class="generation-status-spinner" aria-hidden="true" />
-            <span class="generation-status-copy">{{ generationWaitingText }}</span>
+            <span class="generation-status-copy">{{ taskWaitingText }}</span>
             <span class="generation-status-dots" aria-hidden="true"><i /><i /><i /></span>
           </div>
           <div ref="chatListRef" class="chat-list">
@@ -188,6 +194,21 @@
                 <pre v-if="!entry.collapsed" class="code-preview diff-code"><code>{{ entry.content }}</code></pre>
               </div>
 
+              <div v-else-if="entry.kind === 'modification-result'" class="entry modification-result-entry" :class="{ accepted: entry.accepted }">
+                <span class="entry-icon ok"><ToolIcon name="check" /></span>
+                <div class="modification-result-main">
+                  <span class="entry-title">{{ entry.undone ? "已撤销本次修改" : entry.accepted ? "已接受本次修改" : "修改结果待确认" }}</span>
+                  <p>{{ entry.content || "修改已完成，请确认结果是否符合预期。" }}</p>
+                  <div v-if="!entry.accepted && !entry.undone" class="result-actions">
+                    <button class="text-btn" type="button" @click="acceptModification(entry)">接受</button>
+                    <button class="text-btn rollback" type="button" :disabled="entry.undoing || !entry.versionId" @click="undoModification(entry)">
+                      {{ entry.undoing ? "正在撤销…" : "撤销本次修改" }}
+                    </button>
+                  </div>
+                  <span v-else-if="entry.undone" class="entry-hint">已恢复到本次修改前的版本</span>
+                </div>
+              </div>
+
               <!-- 构建日志（可折叠） -->
               <div
                 v-else-if="entry.kind === 'build'"
@@ -274,8 +295,8 @@
       <main class="preview-pane">
         <LivePreviewPanel
           :project-id="projectId"
-          :stage="progressStage"
-          :running="generationActive"
+          :stage="activeTaskStage"
+          :running="taskActive"
           :error="previewError"
           :build-attempt="runningGen?.build_attempt || 0"
           :refresh-token="previewRefresh"
@@ -337,6 +358,7 @@ import {
   cancelGeneration,
   createGeneration,
   generationEventUrl,
+  getActiveGeneration,
   getGeneration,
 } from "../api/generations";
 import {
@@ -345,7 +367,8 @@ import {
   listSessions,
   updateProject,
 } from "../api/projects";
-import { createModification, modificationEventUrl } from "../api/modifications";
+import { createModification, getActiveModification, modificationEventUrl } from "../api/modifications";
+import { acceptProjectVersion, undoProjectVersion } from "../api/versions";
 import type {
   ElementSnapshot,
   Generation,
@@ -365,6 +388,7 @@ interface ChatEntry {
     | "tools"
     | "file"
     | "diff"
+    | "modification-result"
     | "build"
     | "error"
     | "info";
@@ -379,6 +403,10 @@ interface ChatEntry {
   codeOpen?: boolean;
   pending?: boolean;
   ok?: boolean;
+  versionId?: number;
+  accepted?: boolean;
+  undone?: boolean;
+  undoing?: boolean;
   items?: Array<{
     tool: string;
     detail: string;
@@ -406,7 +434,10 @@ const submitting = ref(false);
 const previewRefresh = ref(0);
 const previewError = ref("");
 const generationActive = ref(false);
+const modificationActive = ref(false);
+const modificationStage = ref("idle");
 const selectedElement = ref<ElementSnapshot | null>(null);
+const persistedStages = ref<string[]>([]);
 const generationRunning = computed(() =>
   ["pending", "running"].includes(runningGen.value?.status || "")
 );
@@ -414,7 +445,12 @@ const modificationRunning = computed(() =>
   ["pending", "running", "cancel_requested"].includes(runningModification.value?.status || "")
 );
 const inputLocked = computed(() => generationRunning.value || modificationRunning.value);
-const generationWaitingText = computed(() => {
+const taskActive = computed(() => generationActive.value || modificationActive.value);
+const activeTaskStage = computed(() => modificationActive.value ? modificationStage.value : progressStage.value);
+const taskWaitingText = computed(() => {
+  if (modificationActive.value) {
+    return modificationStage.value === "edit" ? "正在应用修改并更新预览" : "正在定位待修改的源码";
+  }
   if (!generationActive.value) return "";
   const labels: Record<string, string> = {
     parse: "正在整理实施方案",
@@ -664,9 +700,24 @@ function toolIcon(tool?: string) {
 onMounted(async () => {
   project.value = await getProject(projectId);
   const sessions = await listSessions(projectId);
-  if (sessions.length) {
-    activeSessionId.value = sessions[0].id;
+  const activeGeneration = await getActiveGeneration(projectId);
+  const activeModification = await getActiveModification(projectId);
+  const activeTaskSessionId = activeGeneration?.session_id || activeModification?.session_id;
+  if (activeTaskSessionId || sessions.length) {
+    activeSessionId.value = activeTaskSessionId || sessions[0].id;
     await reloadHistory();
+  }
+  if (activeGeneration) {
+    runningGen.value = activeGeneration;
+    generationActive.value = true;
+    progressStage.value = recoverStageFromHistory();
+    watchGeneration(activeGeneration.id);
+  }
+  if (activeModification) {
+    runningModification.value = activeModification;
+    modificationActive.value = true;
+    modificationStage.value = recoverModificationStageFromHistory();
+    watchModification(activeModification.id);
   }
   // 首页“生成项目”带提示词跳转：自动开始生成
   const autoRequirement = route.query.requirement;
@@ -688,8 +739,24 @@ async function reloadHistory() {
   entries.value = historyToEntries(history);
 }
 
+function recoverStageFromHistory() {
+  const validStages = new Set(["parse", "plan", "generate", "build", "repair"]);
+  const stageFromMessages = [...persistedStages.value]
+    .reverse()
+    .find((stage): stage is string => Boolean(stage && validStages.has(stage)));
+  return stageFromMessages || "parse";
+}
+
+function recoverModificationStageFromHistory() {
+  return [...persistedStages.value]
+    .reverse()
+    .find((stage) => stage === "locate" || stage === "edit") || "locate";
+}
+
 function historyToEntries(history: Message[]): ChatEntry[] {
   const list: ChatEntry[] = [];
+  const reviewByVersion = new Map<number, string>();
+  persistedStages.value = [];
   let currentTools: ChatEntry | null = null;
   for (const m of history) {
     if (m.role === "user") {
@@ -704,7 +771,13 @@ function historyToEntries(history: Message[]): ChatEntry[] {
     }
     if (m.msg_type === "modification_summary") {
       currentTools = null;
-      list.push({ id: ++seq, kind: "assistant", content: m.content, collapsed: false });
+      const event = (m.tool_call_json || {}) as { version_id?: number };
+      list.push({ id: ++seq, kind: "modification-result", content: m.content, versionId: event.version_id, collapsed: false });
+      continue;
+    }
+    if (m.msg_type === "modification_review") {
+      const review = (m.tool_call_json || {}) as { version_id?: number; status?: string };
+      if (review.version_id && review.status) reviewByVersion.set(review.version_id, review.status);
       continue;
     }
     if (m.msg_type === "modification_diff") {
@@ -716,7 +789,9 @@ function historyToEntries(history: Message[]): ChatEntry[] {
     }
     if (m.msg_type === "stage") {
       currentTools = null;
-      // 阶段进度仅在任务执行时显示为居中状态牌，不再回放为聊天消息。
+      // Keep stage replay data out of chat bubbles, but use it to resume the
+      // stage rail when a running task is reopened.
+      persistedStages.value.push(m.content);
       continue;
     }
     if (m.msg_type === "think") {
@@ -782,6 +857,12 @@ function historyToEntries(history: Message[]): ChatEntry[] {
     currentTools = null;
     list.push({ id: ++seq, kind: "assistant", content: m.content, collapsed: false });
   }
+  for (const entry of list) {
+    if (entry.kind !== "modification-result" || !entry.versionId) continue;
+    const review = reviewByVersion.get(entry.versionId);
+    entry.accepted = review === "accepted";
+    entry.undone = review === "undone";
+  }
   return list;
 }
 
@@ -821,8 +902,21 @@ async function submitRequirement() {
 }
 
 function shouldSubmitModification(text: string) {
-  if (selectedElement.value) return true;
-  return /(?:修改|改成|改为|替换|调整|删除|新增|添加)/.test(text);
+  return classifyChatIntent(text) === "modification";
+}
+
+function classifyChatIntent(text: string): "generation" | "modification" {
+  if (selectedElement.value) return "modification";
+  const normalized = text.trim();
+  const generationRequest = /(?:重新生成|从头(?:开始|制作)|新建(?:一个)?(?:项目|页面)|创建(?:一个)?(?:项目|页面)|搭建(?:一个)?|做(?:一个)?(?:全新|新的)?(?:网站|页面|应用))/.test(normalized);
+  const modificationRequest = /(?:修改|改成|改为|替换|调整|删除|新增|添加|优化|修复|改一下|变更|换成|换为)/.test(normalized);
+  if (generationRequest) return "generation";
+  if (modificationRequest) return "modification";
+  // Once a project has a completed generation, ordinary follow-up messages are
+  // edits by default. Explicit creation wording above remains a new generation.
+  return entries.value.some((entry) => entry.kind === "assistant" || entry.kind === "modification-result")
+    ? "modification"
+    : "generation";
 }
 
 async function submitDirectModification(text: string) {
@@ -857,6 +951,8 @@ async function submitDirectModification(text: string) {
 function onModificationSubmitted(modification: Modification, instruction: string, addUserMessage = true) {
   if (addUserMessage) push({ kind: "user", content: instruction });
   runningModification.value = modification;
+  modificationActive.value = true;
+  modificationStage.value = "locate";
   watchModification(modification.id);
 }
 
@@ -866,6 +962,7 @@ function watchModification(modificationId: number) {
   const parse = (event: Event) => JSON.parse((event as MessageEvent).data) as SseEvent;
   modificationEventSource.addEventListener("stage", (event) => {
     const stage = String(parse(event).stage || "");
+    modificationStage.value = stage === "edit" ? "edit" : "locate";
     const labels: Record<string, string> = { locate: "正在定位待修改源码", edit: "正在应用修改" };
     push({ kind: "info", content: labels[stage] || "正在执行修改" });
   });
@@ -907,13 +1004,42 @@ function watchModification(modificationId: number) {
   });
   modificationEventSource.addEventListener("completed", (event) => {
     const data = parse(event); endStreaming();
-    push({ kind: "assistant", content: String(data.summary || "修改完成"), collapsed: false });
-    runningModification.value = null; modificationEventSource?.close(); onModificationCompleted(); void reloadHistory();
+    push({ kind: "modification-result", content: String(data.summary || "修改完成"), versionId: Number(data.version_id) || undefined, collapsed: false });
+    runningModification.value = null; modificationActive.value = false; modificationStage.value = "done"; modificationEventSource?.close(); onModificationCompleted(); void reloadHistory();
   });
   modificationEventSource.addEventListener("task_error", (event) => {
-    const error = String(parse(event).error || "修改失败"); endStreaming(); push({ kind: "error", content: error }); runningModification.value = null; modificationEventSource?.close();
+    const error = String(parse(event).error || "修改失败"); endStreaming(); push({ kind: "error", content: error }); runningModification.value = null; modificationActive.value = false; modificationStage.value = "done"; modificationEventSource?.close();
   });
-  modificationEventSource.addEventListener("cancelled", () => { push({ kind: "info", content: "已取消这次修改" }); runningModification.value = null; modificationEventSource?.close(); });
+  modificationEventSource.addEventListener("cancelled", () => { push({ kind: "info", content: "已取消这次修改" }); runningModification.value = null; modificationActive.value = false; modificationStage.value = "done"; modificationEventSource?.close(); });
+}
+
+async function acceptModification(entry: ChatEntry) {
+  if (!entry.versionId) return;
+  try {
+    await acceptProjectVersion(projectId, entry.versionId);
+    entry.accepted = true;
+    ElMessage.success("已接受本次修改");
+    await reloadHistory();
+  } catch (error: any) {
+    ElMessage.error(error.response?.data?.detail || "确认失败");
+  }
+}
+
+async function undoModification(entry: ChatEntry) {
+  if (!entry.versionId) return;
+  try {
+    await ElMessageBox.confirm("将恢复到本次修改前的版本，确认撤销吗？", "撤销修改", { type: "warning" });
+    entry.undoing = true;
+    await undoProjectVersion(projectId, entry.versionId);
+    entry.undone = true;
+    previewRefresh.value += 1;
+    ElMessage.success("已撤销本次修改");
+    await reloadHistory();
+  } catch (error: any) {
+    if (error !== "cancel" && error !== "close") ElMessage.error(error.response?.data?.detail || "撤销失败");
+  } finally {
+    entry.undoing = false;
+  }
 }
 
 function watchGeneration(genId: number) {
@@ -1285,6 +1411,30 @@ async function renameProject() {
   font-size: 11px;
   color: var(--faint);
 }
+.modification-stage-rail {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--faint);
+  font-size: 12px;
+}
+.modification-stage-rail span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.modification-stage-rail span::before {
+  width: 8px;
+  height: 8px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  content: "";
+}
+.modification-stage-rail span.active { color: var(--primary-dark); font-weight: 600; }
+.modification-stage-rail span.active::before { border-color: var(--primary); box-shadow: 0 0 0 4px var(--primary-soft); }
+.modification-stage-rail span.done { color: #3f8f62; }
+.modification-stage-rail span.done::before { border-color: #3f8f62; background: #3f8f62; }
+.modification-stage-rail i { width: 28px; height: 1px; background: var(--line); }
 .error-line {
   margin-top: 12px;
 }
@@ -1630,6 +1780,40 @@ async function renameProject() {
   background: var(--primary-soft);
   border-color: rgba(91, 103, 241, 0.25);
 }
+.modification-result-entry {
+  align-items: flex-start;
+  gap: 9px;
+  background: #f8faff;
+  border-color: #d7e1f5;
+}
+.modification-result-entry.accepted {
+  background: #f5fcf7;
+  border-color: #b9ddc7;
+}
+.modification-result-main {
+  min-width: 0;
+  flex: 1;
+}
+.modification-result-main p {
+  margin: 4px 0 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.result-actions {
+  display: flex;
+  gap: 12px;
+}
+.text-btn {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--primary-dark);
+  cursor: pointer;
+  font-size: 12px;
+}
+.text-btn.rollback { color: #b04b56; }
+.text-btn:disabled { opacity: .45; cursor: not-allowed; }
 .input-row {
   display: flex;
   gap: 10px;

@@ -15,3 +15,13 @@ export async function rollbackProjectVersion(projectId: number, versionId: numbe
   const { data } = await api.post(`/projects/${projectId}/versions/${versionId}/rollback`);
   return data;
 }
+
+export async function undoProjectVersion(projectId: number, versionId: number) {
+  const { data } = await api.post(`/projects/${projectId}/versions/${versionId}/undo`);
+  return data;
+}
+
+export async function acceptProjectVersion(projectId: number, versionId: number) {
+  const { data } = await api.post(`/projects/${projectId}/versions/${versionId}/accept`);
+  return data;
+}

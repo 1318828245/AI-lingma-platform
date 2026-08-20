@@ -54,6 +54,26 @@ def test_modification_text_edit_diff_and_version(client, admin_headers):
         workspace = project_workspace(project_id)
         assert "新标题" in (workspace / "index.html").read_text(encoding="utf-8")
 
+    version_id = status["diff_json"]["version_id"]
+    accepted = client.post(
+        f"/api/projects/{project_id}/versions/{version_id}/accept",
+        headers=admin_headers,
+    )
+    assert accepted.status_code == 200, accepted.text
+    assert client.get(f"/api/modifications/{modification_id}", headers=admin_headers).json()["diff_json"]["review_status"] == "accepted"
+
+    undone = client.post(
+        f"/api/projects/{project_id}/versions/{version_id}/undo",
+        headers=admin_headers,
+    )
+    assert undone.status_code == 200, undone.text
+    messages = client.get(f"/api/sessions/{session_id}/messages", headers=admin_headers).json()
+    assert [message["msg_type"] for message in messages].count("modification_review") == 2
+    with SessionLocal() as db:
+        from app.services.project import project_workspace
+
+        assert "旧标题" in (project_workspace(project_id) / "index.html").read_text(encoding="utf-8")
+
 
 def test_direct_chat_modification_uses_instruction_target(client, admin_headers):
     project = client.post(
@@ -78,3 +98,23 @@ def test_direct_chat_modification_uses_instruction_target(client, admin_headers)
             break
         time.sleep(0.02)
     assert status["status"] == "succeeded", status
+
+
+def test_active_modification_is_scoped_to_its_project(client, admin_headers):
+    from app.models.modification import Modification
+    from app.models.session import Session as ChatSession
+
+    project = client.post(
+        "/api/projects", headers=admin_headers,
+        json={"name": "Active modification", "template": "blank", "tech_stack": "html"},
+    ).json()
+    with SessionLocal() as db:
+        session = db.query(ChatSession).filter(ChatSession.project_id == project["id"]).one()
+        modification = Modification(project_id=project["id"], session_id=session.id, instruction="resume", status="running")
+        db.add(modification)
+        db.commit()
+        modification_id = modification.id
+
+    response = client.get(f"/api/projects/{project['id']}/modifications/active", headers=admin_headers)
+    assert response.status_code == 200
+    assert response.json()["id"] == modification_id

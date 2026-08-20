@@ -97,7 +97,8 @@ async def _emit(state: ModificationState, event: dict) -> None:
 def _system_prompt(state: ModificationState) -> str:
     return (
         "你是前端局部修改 Agent。只处理用户选中的元素和修改指令，禁止重写无关文件。"
-        "必须先读取源码，优先使用 edit_file 做最小替换；不能定位时不要虚构修改，调用 finish 说明原因。\n"
+        "必须先读取源码，优先使用 edit_file 做最小替换；不能定位时不要虚构修改，调用 finish 说明原因。"
+        "只能修改源码，严禁修改 dist、build 或其他构建产物。新增按钮、开关、表单或其他可点击控件时，必须同时实现与用户需求相符的点击/提交行为和可见反馈；没有指定业务动作时，至少提供明确、可用的本地 UI 状态反馈，不能只渲染无响应的外观。\n"
         f"元素快照：{json.dumps(state.get('element_snapshot', {}), ensure_ascii=False)}\n"
         f"候选文件：{json.dumps(state.get('related_files', []), ensure_ascii=False)}"
     )

@@ -44,8 +44,8 @@
       />
       <div v-if="running" class="preview-state generating" role="status">
         <span class="spinner" />
-        <p class="empty-title">正在生成预览</p>
-        <p class="muted">页面代码与构建产物完成后会自动刷新</p>
+        <p class="empty-title">{{ runningTitle }}</p>
+        <p class="muted">{{ runningHint }}</p>
       </div>
       <div v-else-if="!ready && error" class="empty error-state">
         <p class="empty-icon" aria-hidden="true">!</p>
@@ -228,6 +228,14 @@ const statusClass = computed(() => {
 });
 
 const stageLabel = computed(() => props.stage || "idle");
+const runningTitle = computed(() =>
+  props.stage === "locate" || props.stage === "edit" ? "正在更新预览" : "正在生成预览"
+);
+const runningHint = computed(() =>
+  props.stage === "locate" || props.stage === "edit"
+    ? "修改完成并更新构建产物后会自动刷新"
+    : "页面代码与构建产物完成后会自动刷新"
+);
 
 async function checkStatus() {
   loading.value = true;

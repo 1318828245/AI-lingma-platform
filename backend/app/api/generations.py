@@ -75,6 +75,22 @@ def get_generation(
     return _gen_out(get_generation_for_user(db, generation_id, user.id))
 
 
+@router.get("/api/projects/{project_id}/generations/active", response_model=GenerationOut | None)
+def get_active_generation(
+    project_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    get_owned_project(db, project_id, user.id)
+    generation = (
+        db.query(Generation)
+        .filter(Generation.project_id == project_id, Generation.status.in_(["pending", "running"]))
+        .order_by(Generation.created_at.desc())
+        .first()
+    )
+    return _gen_out(generation) if generation is not None else None
+
+
 @router.get("/api/generations/{generation_id}/events")
 async def generation_events(
     generation_id: int,

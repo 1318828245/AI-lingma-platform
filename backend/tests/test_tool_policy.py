@@ -15,4 +15,5 @@ def test_tool_schemas_are_shared_and_agent_specific():
 def test_tool_policy_rejects_wrong_agent_and_sensitive_path():
     assert validate_tool_call("modification", ToolCall("call_1", "run_command", {"command": ["npm", "run", "build"]}))
     assert validate_tool_call("generation", ToolCall("call_2", "read_file", {"path": "../.env"}))
+    assert validate_tool_call("modification", ToolCall("call_3", "edit_file", {"path": "dist/assets/app.js", "old": "a", "new": "b"}))
     assert validate_tool_call("generation", ToolCall("call_3", "read_file", {"path": "index.html"})) is None

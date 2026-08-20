@@ -73,6 +73,22 @@ def get_modification(modification_id: int, user: User = Depends(get_current_user
     return _mod_out(_get_owned_modification(db, modification_id, user.id))
 
 
+@router.get("/api/projects/{project_id}/modifications/active", response_model=ModificationOut | None)
+def get_active_modification(
+    project_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    get_owned_project(db, project_id, user.id)
+    modification = (
+        db.query(Modification)
+        .filter(Modification.project_id == project_id, Modification.status.in_(["pending", "running", "cancel_requested"]))
+        .order_by(Modification.created_at.desc())
+        .first()
+    )
+    return _mod_out(modification) if modification is not None else None
+
+
 @router.post("/api/modifications/{modification_id}/cancel")
 def cancel_modification(modification_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     modification = _get_owned_modification(db, modification_id, user.id)

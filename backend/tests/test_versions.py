@@ -56,3 +56,34 @@ def test_project_version_list_diff_and_rollback(client, admin_headers):
         workspace = project_workspace(project_id)
         assert (workspace / "index.html").read_text(encoding="utf-8") == "<h1>第一版</h1>"
         assert not (workspace / "extra.txt").exists()
+
+
+def test_project_version_undo_restores_previous_snapshot(client, admin_headers):
+    created = client.post(
+        "/api/projects",
+        headers=admin_headers,
+        json={"name": "Undo version project", "template": "blank", "tech_stack": "html"},
+    ).json()
+    project_id = created["id"]
+
+    with SessionLocal() as db:
+        write_project_file(db, project_id, "index.html", "<h1>before</h1>")
+        snapshot_project(db, project_id, source_type="test", summary="before")
+        db.commit()
+        write_project_file(db, project_id, "index.html", "<h1>after</h1>")
+        changed = snapshot_project(db, project_id, source_type="modification", summary="after")
+        db.commit()
+        changed_id = changed.id
+
+    response = client.post(
+        f"/api/projects/{project_id}/versions/{changed_id}/undo",
+        headers=admin_headers,
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["version"]["summary"] == "before"
+
+    with SessionLocal() as db:
+        from app.services.project import project_workspace
+
+        workspace = project_workspace(project_id)
+        assert (workspace / "index.html").read_text(encoding="utf-8") == "<h1>before</h1>"

@@ -19,6 +19,11 @@ export async function getGeneration(id: number): Promise<Generation> {
   return data;
 }
 
+export async function getActiveGeneration(projectId: number): Promise<Generation | null> {
+  const { data } = await api.get(`/projects/${projectId}/generations/active`);
+  return data;
+}
+
 export async function cancelGeneration(id: number) {
   const { data } = await api.post(`/generations/${id}/cancel`);
   return data;

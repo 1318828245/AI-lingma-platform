@@ -138,6 +138,21 @@ def get_version(db: Session, project_id: int, version_id: int) -> ProjectVersion
     return version
 
 
+def previous_version(db: Session, project_id: int, version: ProjectVersion) -> ProjectVersion:
+    previous = (
+        db.query(ProjectVersion)
+        .filter(
+            ProjectVersion.project_id == project_id,
+            ProjectVersion.version_no < version.version_no,
+        )
+        .order_by(ProjectVersion.version_no.desc())
+        .first()
+    )
+    if previous is None:
+        raise HTTPException(status_code=400, detail="No previous version is available for this undo")
+    return previous
+
+
 def version_manifest(version: ProjectVersion) -> dict[str, dict]:
     return version.snapshot_manifest_json or {}
 
