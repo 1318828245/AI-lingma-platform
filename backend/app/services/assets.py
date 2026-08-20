@@ -10,6 +10,7 @@ import inspect
 import json
 import re
 import subprocess
+from functools import partial
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass
 from datetime import datetime
@@ -24,6 +25,7 @@ from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.models.asset import AssetJob, ProjectAsset
 from app.services.project import project_workspace, write_project_file
+from app.services.task_manager import get_asset_task_manager
 
 AssetEvent = Callable[[dict], Awaitable[None]]
 _SAFE_KINDS = {"icon", "photo", "illustration"}
@@ -366,7 +368,10 @@ async def collect_assets(
     usage_role: str = "decorative",
     orientation: str = "landscape",
     limit: int = 4,
+    target_path: str = "",
+    placeholder: str = "",
     emit: AssetEvent | None = None,
+    job_id: int | None = None,
 ) -> dict:
     """Run allowed source adapters concurrently and materialize one safe choice.
 
@@ -379,7 +384,7 @@ async def collect_assets(
     if not cleaned_query:
         raise ValueError("asset query cannot be empty")
     limit = max(1, min(int(limit), 6))
-    request = {"kind": kind, "query": cleaned_query, "usage_role": usage_role[:80], "orientation": orientation[:20], "limit": limit}
+    request = {"kind": kind, "query": cleaned_query, "usage_role": usage_role[:80], "orientation": orientation[:20], "limit": limit, "target_path": target_path, "placeholder": placeholder}
     settings = get_settings()
     source_configured = (
         (kind == "icon" and settings.asset_iconify_enabled)
@@ -387,19 +392,31 @@ async def collect_assets(
         or (kind == "illustration" and bool(settings.asset_pixabay_api_key))
     )
     with SessionLocal() as db:
-        job = AssetJob(
-            project_id=project_id,
-            generation_id=generation_id,
-            modification_id=modification_id,
-            session_id=session_id,
-            status="running",
-            request_json=request,
-            started_at=datetime.now(),
-        )
-        db.add(job)
-        db.commit()
-        db.refresh(job)
-        job_id = job.id
+        job = db.get(AssetJob, job_id) if job_id is not None else None
+        if job is None:
+            job = AssetJob(
+                project_id=project_id,
+                generation_id=generation_id,
+                modification_id=modification_id,
+                session_id=session_id,
+                status="running",
+                request_json=request,
+                started_at=datetime.now(),
+            )
+            db.add(job)
+            db.commit()
+            db.refresh(job)
+            job_id = job.id
+        elif job.status == "cancel_requested":
+            job.status = "cancelled"
+            job.finished_at = datetime.now()
+            db.commit()
+            await _emit(emit, {"type": "asset_collection_cancelled", "asset_job_id": job.id})
+            return {"job_id": job.id, "candidates": [], "selected": None, "degraded": True, "cancelled": True}
+        else:
+            job.status = "running"
+            job.started_at = datetime.now()
+            db.commit()
     await _emit(emit, {"type": "asset_collection_started", "asset_job_id": job_id, "kind": kind, "query": cleaned_query})
 
     tasks: list[tuple[str, Awaitable[list[AssetCandidate]]]] = []
@@ -466,7 +483,125 @@ async def collect_assets(
             job.finished_at = datetime.now()
             db.commit()
     await _emit(emit, {"type": "asset_collection_completed", **result, "message": message})
+    if selected is not None and target_path and placeholder:
+        workspace = project_workspace(project_id)
+        target = workspace / target_path
+        if target.is_file() and ".." not in target_path.replace("\\", "/").split("/"):
+            content = target.read_text(encoding="utf-8")
+            if content.count(placeholder) == 1:
+                reference = selected.local_path or selected.external_url or ""
+                with SessionLocal() as db:
+                    write_project_file(db, project_id, target_path, content.replace(placeholder, reference, 1))
+                    task = db.get(AssetJob, job_id)
+                    if task is not None:
+                        updated_request = dict(task.request_json or {})
+                        updated_request["applied_reference"] = reference
+                        task.request_json = updated_request
+                    db.commit()
+                await _emit(emit, {"type": "asset_patch_completed", "asset_job_id": job_id, "path": target_path})
     return result
+
+
+async def enqueue_asset_collection(
+    *, project_id: int, generation_id: int | None, modification_id: int | None,
+    session_id: int | None, kind: str, query: str, usage_role: str = "decorative",
+    orientation: str = "landscape", limit: int = 4, target_path: str = "", placeholder: str = "", emit: AssetEvent | None = None,
+) -> dict:
+    """Persist a pending asset job and return immediately to the calling Agent."""
+    if kind not in _SAFE_KINDS:
+        raise ValueError("asset kind must be icon, photo, or illustration")
+    cleaned_query = " ".join(query.split())[:180]
+    if not cleaned_query:
+        raise ValueError("asset query cannot be empty")
+    request = {
+        "kind": kind, "query": cleaned_query, "usage_role": usage_role[:80],
+        "orientation": orientation[:20], "limit": max(1, min(int(limit), 6)), "target_path": target_path, "placeholder": placeholder,
+    }
+    with SessionLocal() as db:
+        job = AssetJob(
+            project_id=project_id, generation_id=generation_id,
+            modification_id=modification_id, session_id=session_id,
+            status="pending", request_json=request,
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        job_id = job.id
+    await _emit(emit, {"type": "asset_collection_queued", "asset_job_id": job_id, **request})
+    await get_asset_task_manager().enqueue(partial(run_asset_job, job_id, emit))
+    return {"job_id": job_id, "status": "pending", "message": "素材任务已后台排队，页面可先继续生成占位版本"}
+
+
+async def run_asset_job(job_id: int, emit: AssetEvent | None = None) -> None:
+    with SessionLocal() as db:
+        job = db.get(AssetJob, job_id)
+        if job is None or job.status in {"cancelled", "cancel_requested"}:
+            if job is not None:
+                job.status = "cancelled"
+                job.finished_at = datetime.now()
+                db.commit()
+            return
+        request = dict(job.request_json or {})
+        project_id, generation_id = job.project_id, job.generation_id
+        modification_id, session_id = job.modification_id, job.session_id
+    await collect_assets(
+        project_id=project_id, generation_id=generation_id,
+        modification_id=modification_id, session_id=session_id,
+        kind=str(request.get("kind") or "photo"), query=str(request.get("query") or ""),
+        usage_role=str(request.get("usage_role") or "decorative"),
+        orientation=str(request.get("orientation") or "landscape"),
+        limit=int(request.get("limit") or 4), target_path=str(request.get("target_path") or ""), placeholder=str(request.get("placeholder") or ""), emit=emit, job_id=job_id,
+    )
+
+
+def asset_job_wire(job: AssetJob) -> dict:
+    return {
+        "id": job.id, "project_id": job.project_id, "generation_id": job.generation_id,
+        "modification_id": job.modification_id, "status": job.status,
+        "request": job.request_json or {}, "candidates": job.result_json or [],
+        "error": job.error, "created_at": job.created_at, "finished_at": job.finished_at,
+    }
+
+
+def list_asset_jobs(db: Session, project_id: int) -> list[dict]:
+    rows = db.query(AssetJob).filter(AssetJob.project_id == project_id).order_by(AssetJob.created_at.desc()).all()
+    return [asset_job_wire(row) for row in rows]
+
+
+def pending_asset_job_ids() -> list[int]:
+    with SessionLocal() as db:
+        return [row.id for row in db.query(AssetJob).filter(AssetJob.status.in_(["pending", "running", "cancel_requested"])).all()]
+
+
+async def select_asset_candidate(db: Session, job: AssetJob, candidate_index: int) -> dict:
+    candidates = job.result_json or []
+    if candidate_index < 0 or candidate_index >= len(candidates):
+        raise ValueError("素材候选不存在")
+    candidate = AssetCandidate(**candidates[candidate_index])
+    if candidate.source == "unsplash":
+        await _record_unsplash_download(candidate)
+    selected = (
+        _materialize_icon(db, job.project_id, job.id, candidate, str((job.request_json or {}).get("usage_role") or "decorative"))
+        if candidate.kind == "icon"
+        else _materialize_external(db, job.project_id, job.id, candidate, str((job.request_json or {}).get("usage_role") or "decorative"))
+    )
+    request = dict(job.request_json or {})
+    target_path = str(request.get("target_path") or "")
+    previous_reference = str(request.get("applied_reference") or "")
+    replacement = selected.local_path or selected.external_url or ""
+    if target_path and previous_reference and replacement:
+        target = project_workspace(job.project_id) / target_path
+        if target.is_file() and target.read_text(encoding="utf-8").count(previous_reference) == 1:
+            write_project_file(
+                db, job.project_id, target_path,
+                target.read_text(encoding="utf-8").replace(previous_reference, replacement, 1),
+            )
+            request["applied_reference"] = replacement
+    request["selected_index"] = candidate_index
+    job.request_json = request
+    db.commit()
+    db.refresh(selected)
+    return _asset_wire(selected) or {}
 
 
 def _asset_wire(asset: ProjectAsset | None) -> dict | None:

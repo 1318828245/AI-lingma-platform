@@ -22,7 +22,7 @@
 - [x] 规则护轨、路径防护、工具参数/权限/写入量限制和护轨事件记录。
 - [x] 提示词收敛为 `backend/app/prompts/` 下 6 个 Markdown 文件；Agent 回归场景位于 `backend/evals/`。
 - [x] 前端入口按需注册 Element Plus 必要组件与样式，避免全量组件包影响首屏。
-- [x] 异步素材编排：生成和修改 Agent 均可调用 `collect_assets`；`asset_jobs`/`project_assets` 持久化候选与选用素材，并关联生成或修改任务，SSE/历史展示检索和降级结果。
+- [x] 异步素材编排：生成和修改 Agent 均可创建后台 `asset_jobs`；独立 worker 并发检索来源，支持启动恢复、取消、重试、候选选择/替换，并在源码唯一占位符存在时受控回填素材。
 - [x] 素材来源策略：Iconify/Lucide 图标经固定来源下载、大小/MIME/主动 SVG 校验后写入 `assets/icons/`；照片按 Pexels、Pixabay、Unsplash 自动降级检索，插画/矢量由 Pixabay 提供，均仅保留来源外链与署名，需分别配置 API Key。
 - [x] `assets/manifest.json` 纳入项目版本快照，项目资产可通过 `GET /api/projects/{id}/assets` 查询，删除项目时清理记录和文件。
 

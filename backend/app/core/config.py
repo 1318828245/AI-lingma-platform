@@ -61,6 +61,7 @@ class Settings(BaseSettings):
 
     # 异步素材编排：图片来源均通过白名单适配器访问，密钥不暴露给模型。
     asset_request_timeout_seconds: int = 8
+    asset_concurrency: int = 3
     asset_iconify_enabled: bool = True
     asset_iconify_api_url: str = "https://api.iconify.design"
     asset_pexels_api_key: str = ""

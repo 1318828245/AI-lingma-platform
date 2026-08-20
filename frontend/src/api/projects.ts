@@ -71,3 +71,31 @@ export async function listMessages(sessionId: number) {
   const { data } = await api.get(`/sessions/${sessionId}/messages`);
   return data;
 }
+
+export async function listAssetJobs(projectId: number) {
+  const { data } = await api.get(`/projects/${projectId}/asset-jobs`);
+  return data.jobs as AssetJob[];
+}
+
+export async function cancelAssetJob(projectId: number, jobId: number) {
+  const { data } = await api.post(`/projects/${projectId}/asset-jobs/${jobId}/cancel`);
+  return data as AssetJob;
+}
+
+export async function retryAssetJob(projectId: number, jobId: number) {
+  const { data } = await api.post(`/projects/${projectId}/asset-jobs/${jobId}/retry`);
+  return data as AssetJob;
+}
+
+export async function selectAssetCandidate(projectId: number, jobId: number, candidateIndex: number) {
+  const { data } = await api.post(`/projects/${projectId}/asset-jobs/${jobId}/select`, { candidate_index: candidateIndex });
+  return data;
+}
+
+export interface AssetJob {
+  id: number;
+  status: string;
+  request: { kind?: string; query?: string; usage_role?: string; selected_index?: number };
+  candidates: Array<{ title?: string; kind?: string; source?: string; attribution?: string; external_url?: string }>;
+  error?: string | null;
+}

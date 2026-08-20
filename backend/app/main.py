@@ -9,6 +9,9 @@ from app.core.database import init_db
 from app.services.generation import recover_interrupted_tasks
 from app.services.project import migrate_workspace_layout
 from app.services.task_manager import get_task_manager
+from app.services.task_manager import get_asset_task_manager
+from app.services.assets import pending_asset_job_ids, run_asset_job
+from functools import partial
 
 
 @asynccontextmanager
@@ -21,7 +24,12 @@ async def lifespan(app: FastAPI):
     if recovered:
         print(f"[startup] 将 {recovered} 个遗留生成任务标记为 interrupted")
     await get_task_manager().start()
+    asset_manager = get_asset_task_manager()
+    await asset_manager.start()
+    for job_id in pending_asset_job_ids():
+        await asset_manager.enqueue(partial(run_asset_job, job_id))
     yield
+    await asset_manager.stop()
     await get_task_manager().stop()
 
 

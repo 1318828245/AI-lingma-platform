@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from functools import partial
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, get_db
@@ -9,7 +10,9 @@ from app.models.template import Template
 from app.models.user import User
 from app.schemas.project import ProjectCreate, ProjectOut, ProjectUpdate
 from app.services.project import create_project, delete_project, get_owned_project, project_workspace
-from app.services.assets import list_project_assets
+from app.services.assets import asset_job_wire, list_asset_jobs, list_project_assets, run_asset_job, select_asset_candidate
+from app.models.asset import AssetJob
+from app.services.task_manager import get_asset_task_manager
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -65,6 +68,59 @@ def list_assets(
 ):
     get_owned_project(db, project_id, user.id)
     return {"assets": list_project_assets(db, project_id)}
+
+
+@router.get("/{project_id}/asset-jobs")
+def list_asset_collection_jobs(
+    project_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db),
+):
+    get_owned_project(db, project_id, user.id)
+    return {"jobs": list_asset_jobs(db, project_id)}
+
+
+@router.post("/{project_id}/asset-jobs/{job_id}/cancel")
+def cancel_asset_collection_job(
+    project_id: int, job_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db),
+):
+    get_owned_project(db, project_id, user.id)
+    job = db.get(AssetJob, job_id)
+    if job is None or job.project_id != project_id:
+        raise HTTPException(status_code=404, detail="素材任务不存在")
+    if job.status in {"pending", "running"}:
+        job.status = "cancel_requested"
+        db.commit()
+    return asset_job_wire(job)
+
+
+@router.post("/{project_id}/asset-jobs/{job_id}/retry")
+async def retry_asset_collection_job(
+    project_id: int, job_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db),
+):
+    get_owned_project(db, project_id, user.id)
+    job = db.get(AssetJob, job_id)
+    if job is None or job.project_id != project_id:
+        raise HTTPException(status_code=404, detail="素材任务不存在")
+    if job.status in {"pending", "running"}:
+        raise HTTPException(status_code=409, detail="素材任务仍在运行")
+    job.status, job.error, job.finished_at = "pending", None, None
+    db.commit()
+    await get_asset_task_manager().enqueue(partial(run_asset_job, job.id))
+    return asset_job_wire(job)
+
+
+@router.post("/{project_id}/asset-jobs/{job_id}/select")
+async def select_asset_collection_candidate(
+    project_id: int, job_id: int, candidate_index: int = Body(embed=True),
+    user: User = Depends(get_current_user), db: Session = Depends(get_db),
+):
+    get_owned_project(db, project_id, user.id)
+    job = db.get(AssetJob, job_id)
+    if job is None or job.project_id != project_id:
+        raise HTTPException(status_code=404, detail="素材任务不存在")
+    try:
+        return {"asset": await select_asset_candidate(db, job, candidate_index)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.patch("/{project_id}", response_model=ProjectOut)

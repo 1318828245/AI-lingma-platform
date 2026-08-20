@@ -57,9 +57,9 @@ async def execute_tool(call: ToolCall, context: ToolExecutionContext) -> ToolRes
                 await context.on_file_written(path, written)
             return ToolResult(True, {"path": path})
         if call.name == "collect_assets":
-            from app.services.assets import collect_assets
+            from app.services.assets import enqueue_asset_collection
 
-            result = await collect_assets(
+            result = await enqueue_asset_collection(
                 project_id=context.project_id,
                 generation_id=context.generation_id,
                 modification_id=context.modification_id,
@@ -68,6 +68,8 @@ async def execute_tool(call: ToolCall, context: ToolExecutionContext) -> ToolRes
                 query=str(args["query"]),
                 usage_role=str(args.get("usage_role") or "decorative"),
                 orientation=str(args.get("orientation") or "landscape"),
+                target_path=str(args.get("target_path") or ""),
+                placeholder=str(args.get("placeholder") or ""),
                 emit=context.on_asset_event,
             )
             return ToolResult(True, result)

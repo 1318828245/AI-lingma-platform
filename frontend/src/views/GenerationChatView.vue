@@ -304,6 +304,17 @@
           @element-selected="onElementSelected"
           @picker-toggled="onPickerToggled"
         >
+          <template #actions>
+            <button
+              class="asset-entry"
+              :class="{ active: assetPanelOpen }"
+              type="button"
+              title="查看素材检索任务与候选素材"
+              @click="assetPanelOpen = !assetPanelOpen"
+            >
+              素材
+            </button>
+          </template>
           <template #overlay="{ style, placement }">
             <div
               v-if="selectedElement"
@@ -322,6 +333,13 @@
             </div>
           </template>
         </LivePreviewPanel>
+        <AssetPanel
+          v-if="assetPanelOpen"
+          class="asset-drawer"
+          :project-id="projectId"
+          @asset-updated="onModificationCompleted"
+          @close="assetPanelOpen = false"
+        />
         <button
           class="version-fab"
           :class="{ active: versionsOpen }"
@@ -349,6 +367,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import LivePreviewPanel from "../components/LivePreviewPanel.vue";
+import AssetPanel from "../components/AssetPanel.vue";
 import ModifyPanel from "../components/ModifyPanel.vue";
 import VersionHistory from "../components/VersionHistory.vue";
 import MarkdownView from "../components/MarkdownView.vue";
@@ -463,6 +482,7 @@ const taskWaitingText = computed(() => {
   return labels[progressStage.value] || "正在整理实施方案";
 });
 const versionsOpen = ref(false);
+const assetPanelOpen = ref(false);
 const streamTick = ref(0);
 const chatListRef = ref<HTMLElement | null>(null);
 const splitRef = ref<HTMLElement | null>(null);
@@ -1915,6 +1935,9 @@ async function renameProject() {
   min-height: 0;
   padding: 16px 16px 16px 10px;
 }
+.asset-drawer { position: absolute; top: 58px; right: 18px; z-index: 12; }
+.asset-entry { border: 1px solid var(--line-strong); background: var(--paper); color: var(--muted); padding: 5px 10px; border-radius: var(--radius-sm); cursor: pointer; font-size: 12px; }
+.asset-entry:hover,.asset-entry.active { color: var(--primary); border-color: var(--primary); background: var(--primary-soft); }
 
 .element-popover {
   position: absolute;
@@ -2114,6 +2137,7 @@ async function renameProject() {
     height: 56vh;
     min-height: 420px;
   }
+  .asset-drawer { top: 58px; right: 12px; }
   .version-fab { right: 16px; bottom: 18px; }
   .floating-version-history { right: 12px; bottom: 66px; width: calc(100% - 24px); }
 }

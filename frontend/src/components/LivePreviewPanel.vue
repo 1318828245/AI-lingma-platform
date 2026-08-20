@@ -16,6 +16,7 @@
           {{ v.label }}
         </button>
       </div>
+      <slot name="actions" />
       <button class="icon-btn" title="重新加载预览" @click="reload">
         <span aria-hidden="true">⟳</span>
         刷新

@@ -66,6 +66,7 @@ class TaskManager:
 
 
 _task_manager: TaskManager | None = None
+_asset_task_manager: TaskManager | None = None
 
 
 def get_task_manager() -> TaskManager:
@@ -77,3 +78,14 @@ def get_task_manager() -> TaskManager:
             timeout_seconds=settings.task_timeout_seconds,
         )
     return _task_manager
+
+
+def get_asset_task_manager() -> TaskManager:
+    global _asset_task_manager
+    if _asset_task_manager is None:
+        settings = get_settings()
+        _asset_task_manager = TaskManager(
+            concurrency=settings.asset_concurrency,
+            timeout_seconds=settings.task_timeout_seconds,
+        )
+    return _asset_task_manager
