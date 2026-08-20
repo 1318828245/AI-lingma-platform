@@ -10,12 +10,13 @@
         </div>
       </div>
       <div class="right">
-        <span class="state" :class="genStateClass">{{ genStateLabel }}</span>
+        <span class="state" :class="genStateClass"><i aria-hidden="true" />{{ genStateLabel }}</span>
+        <span class="topbar-divider" aria-hidden="true" />
         <button class="ghost" title="重命名项目" @click="renameProject">
           重命名
         </button>
         <button
-          class="ghost"
+          class="ghost preview-link"
           title="在新页面单独查看预览"
           @click="$router.push(`/projects/${projectId}/preview`)"
         >
@@ -310,9 +311,15 @@
               :class="{ active: assetPanelOpen }"
               type="button"
               title="查看素材检索任务与候选素材"
+              :aria-expanded="assetPanelOpen"
               @click="assetPanelOpen = !assetPanelOpen"
             >
-              素材
+              <span class="asset-entry-mark" aria-hidden="true"><i /><i /><i /><i /></span>
+              <span class="asset-entry-copy">
+                <strong>素材库</strong>
+                <small>{{ assetPanelOpen ? "正在浏览" : "候选图片" }}</small>
+              </span>
+              <span class="asset-entry-state" :class="{ active: assetPanelOpen }" aria-hidden="true" />
             </button>
           </template>
           <template #overlay="{ style, placement }">
@@ -1409,9 +1416,12 @@ async function renameProject() {
 .right {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 .state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.06em;
@@ -1420,6 +1430,25 @@ async function renameProject() {
   border: 1px solid var(--line-strong);
   color: var(--muted);
   background: var(--canvas);
+}
+.state i {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 0 3px currentColor;
+  opacity: 0.18;
+}
+.state.ok i { opacity: 0.82; }
+.state.run i { opacity: 0.85; animation: state-pulse 1.6s ease-in-out infinite; }
+.topbar-divider {
+  width: 1px;
+  height: 24px;
+  margin: 0 4px;
+  background: var(--line);
+}
+@keyframes state-pulse {
+  50% { transform: scale(1.35); opacity: 0.45; }
 }
 .state.ok {
   color: var(--green);
@@ -1449,6 +1478,11 @@ async function renameProject() {
 .ghost:hover {
   color: var(--primary);
   border-color: var(--primary);
+  background: var(--primary-soft);
+}
+.preview-link {
+  border-color: rgba(82, 100, 216, 0.32);
+  color: var(--primary-dark);
   background: var(--primary-soft);
 }
 .split {
@@ -1935,9 +1969,53 @@ async function renameProject() {
   min-height: 0;
   padding: 16px 16px 16px 10px;
 }
-.asset-drawer { position: absolute; top: 58px; right: 18px; z-index: 12; }
-.asset-entry { border: 1px solid var(--line-strong); background: var(--paper); color: var(--muted); padding: 5px 10px; border-radius: var(--radius-sm); cursor: pointer; font-size: 12px; }
-.asset-entry:hover,.asset-entry.active { color: var(--primary); border-color: var(--primary); background: var(--primary-soft); }
+.asset-drawer { position: absolute; top: 66px; right: 18px; z-index: 12; }
+.asset-entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  border: 1px solid transparent;
+  background: linear-gradient(135deg, #6678e9, #8e9cff);
+  color: #fff;
+  padding: 5px 11px 5px 7px;
+  border-radius: 11px;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(82, 100, 216, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  transition: transform 0.15s, box-shadow 0.15s, filter 0.15s;
+}
+.asset-entry:hover {
+  filter: saturate(1.08) brightness(1.025);
+  transform: translateY(-1px);
+  box-shadow: 0 9px 22px rgba(82, 100, 216, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+.asset-entry.active {
+  background: linear-gradient(135deg, #5366dd, #7789ff);
+  box-shadow: 0 0 0 3px rgba(107, 125, 239, 0.16), 0 9px 22px rgba(82, 100, 216, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.24);
+}
+.asset-entry-mark {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 2px;
+  padding: 4px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.18);
+}
+.asset-entry-mark i {
+  display: block;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.9);
+}
+.asset-entry-mark i:nth-child(2) { opacity: 0.66; }
+.asset-entry-mark i:nth-child(3) { opacity: 0.56; }
+.asset-entry-mark i:nth-child(4) { opacity: 0.78; }
+.asset-entry-copy { display: grid; text-align: left; line-height: 1.05; }
+.asset-entry-copy strong { font-size: 12px; font-weight: 650; letter-spacing: 0.02em; }
+.asset-entry-copy small { margin-top: 2px; color: rgba(255, 255, 255, 0.76); font-size: 9px; letter-spacing: 0.04em; }
+.asset-entry-state { width: 6px; height: 6px; margin-left: 1px; border-radius: 50%; background: rgba(255, 255, 255, 0.62); }
+.asset-entry-state.active { background: #d8ff9f; box-shadow: 0 0 0 3px rgba(216, 255, 159, 0.2); }
 
 .element-popover {
   position: absolute;
@@ -2175,9 +2253,9 @@ async function renameProject() {
 .topbar {
   height: 76px;
   padding: 0 24px;
-  background: rgba(255, 255, 255, 0.96);
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.98), rgba(248, 249, 255, 0.94));
   border-bottom-color: var(--line);
-  box-shadow: 0 1px 0 rgba(36, 48, 73, 0.03);
+  box-shadow: 0 2px 14px rgba(56, 71, 111, 0.045);
 }
 .topbar .eyebrow {
   color: var(--primary);
@@ -2194,7 +2272,7 @@ async function renameProject() {
   font-size: 17px;
   background: linear-gradient(135deg, #6878e8, #8f9cff);
   border-radius: 11px;
-  box-shadow: 0 5px 14px rgba(82, 100, 216, 0.24);
+  box-shadow: 0 6px 16px rgba(82, 100, 216, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 .name {
   color: var(--ink);
@@ -2213,6 +2291,25 @@ async function renameProject() {
   color: var(--ink);
   border-color: rgba(139, 155, 255, 0.65);
   background: var(--primary-soft);
+}
+.preview-link:hover {
+  color: #fff;
+  border-color: var(--primary);
+  background: var(--primary);
+  box-shadow: 0 5px 14px rgba(82, 100, 216, 0.2);
+}
+.state {
+  min-height: 30px;
+  padding: 5px 11px;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+.ghost {
+  min-height: 34px;
+  padding: 7px 13px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 560;
 }
 .state {
   background: rgba(255, 255, 255, 0.035);

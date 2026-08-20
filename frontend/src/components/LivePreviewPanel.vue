@@ -1,8 +1,11 @@
 <template>
   <div class="preview-panel">
     <div class="head">
-      <span class="panel-title">实时预览</span>
-      <span class="chip" :class="statusClass">{{ statusLabel }}</span>
+      <div class="preview-title">
+        <span class="preview-title-mark" aria-hidden="true"><i /><i /><i /></span>
+        <span class="panel-title">实时预览</span>
+        <span class="chip" :class="statusClass">{{ statusLabel }}</span>
+      </div>
       <span class="spacer" />
       <div class="seg mono">
         <button
@@ -16,20 +19,23 @@
           {{ v.label }}
         </button>
       </div>
-      <slot name="actions" />
-      <button class="icon-btn" title="重新加载预览" @click="reload">
-        <span aria-hidden="true">⟳</span>
-        刷新
-      </button>
-      <button
-        class="picker-btn"
-        :class="{ active: pickerEnabled }"
-        :disabled="!ready"
-        title="在预览中点选元素进行修改"
-        @click="togglePicker"
-      >
-        {{ pickerEnabled ? "退出点选" : "点选修改" }}
-      </button>
+      <div class="toolbar-actions">
+        <slot name="actions" />
+        <span class="tool-divider" aria-hidden="true" />
+        <button class="icon-btn" title="重新加载预览" @click="reload">
+          <span aria-hidden="true">⟳</span>
+          刷新
+        </button>
+        <button
+          class="picker-btn"
+          :class="{ active: pickerEnabled }"
+          :disabled="!ready"
+          title="在预览中点选元素进行修改"
+          @click="togglePicker"
+        >
+          {{ pickerEnabled ? "退出点选" : "点选修改" }}
+        </button>
+      </div>
     </div>
 
     <div class="canvas">
@@ -399,8 +405,36 @@ watch(
   background: var(--paper);
   border-bottom: 1px solid var(--line);
 }
+.preview-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: max-content;
+}
+.preview-title-mark {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: end;
+  justify-content: center;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 7px;
+  background: var(--primary-soft);
+}
+.preview-title-mark i {
+  display: block;
+  width: 3px;
+  border-radius: 99px;
+  background: var(--primary);
+}
+.preview-title-mark i:nth-child(1) { height: 6px; opacity: 0.52; }
+.preview-title-mark i:nth-child(2) { height: 10px; }
+.preview-title-mark i:nth-child(3) { height: 7px; opacity: 0.72; }
 .head .panel-title {
-  color: var(--muted);
+  color: var(--ink);
+  font-weight: 650;
+  letter-spacing: 0.02em;
 }
 .chip {
   font-family: var(--font-mono);
@@ -424,6 +458,17 @@ watch(
 }
 .spacer {
   flex: 1;
+}
+.toolbar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.tool-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--line);
+  margin: 0 2px;
 }
 .seg {
   display: flex;
@@ -515,6 +560,21 @@ watch(
   background: var(--paper);
   box-shadow: 0 8px 28px rgba(60, 52, 42, 0.18);
   transition: width 0.2s ease;
+}
+@media (max-width: 940px) {
+  .head {
+    flex-wrap: wrap;
+  }
+  .spacer {
+    display: none;
+  }
+  .seg {
+    margin-left: auto;
+  }
+  .toolbar-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
 }
 .preview-state {
   position: absolute;

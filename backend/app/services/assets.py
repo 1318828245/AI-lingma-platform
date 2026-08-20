@@ -563,9 +563,11 @@ def asset_job_wire(job: AssetJob) -> dict:
     }
 
 
-def list_asset_jobs(db: Session, project_id: int) -> list[dict]:
-    rows = db.query(AssetJob).filter(AssetJob.project_id == project_id).order_by(AssetJob.created_at.desc()).all()
-    return [asset_job_wire(row) for row in rows]
+def list_asset_jobs(db: Session, project_id: int, offset: int = 0, limit: int = 5) -> tuple[list[dict], int]:
+    query = db.query(AssetJob).filter(AssetJob.project_id == project_id).order_by(AssetJob.created_at.desc())
+    total = query.count()
+    rows = query.offset(max(0, offset)).limit(max(1, min(limit, 10))).all()
+    return [asset_job_wire(row) for row in rows], total
 
 
 def pending_asset_job_ids() -> list[int]:

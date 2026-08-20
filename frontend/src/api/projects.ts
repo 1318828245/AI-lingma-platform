@@ -72,9 +72,9 @@ export async function listMessages(sessionId: number) {
   return data;
 }
 
-export async function listAssetJobs(projectId: number) {
-  const { data } = await api.get(`/projects/${projectId}/asset-jobs`);
-  return data.jobs as AssetJob[];
+export async function listAssetJobs(projectId: number, offset = 0, limit = 5) {
+  const { data } = await api.get(`/projects/${projectId}/asset-jobs`, { params: { offset, limit } });
+  return data as { jobs: AssetJob[]; total: number; next_offset: number | null };
 }
 
 export async function cancelAssetJob(projectId: number, jobId: number) {

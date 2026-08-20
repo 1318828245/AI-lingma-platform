@@ -72,10 +72,13 @@ def list_assets(
 
 @router.get("/{project_id}/asset-jobs")
 def list_asset_collection_jobs(
-    project_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db),
+    project_id: int, offset: int = Query(default=0, ge=0), limit: int = Query(default=5, ge=1, le=10),
+    user: User = Depends(get_current_user), db: Session = Depends(get_db),
 ):
     get_owned_project(db, project_id, user.id)
-    return {"jobs": list_asset_jobs(db, project_id)}
+    jobs, total = list_asset_jobs(db, project_id, offset, limit)
+    next_offset = offset + len(jobs)
+    return {"jobs": jobs, "total": total, "next_offset": next_offset if next_offset < total else None}
 
 
 @router.post("/{project_id}/asset-jobs/{job_id}/cancel")
