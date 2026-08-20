@@ -25,17 +25,31 @@ class ModificationCancelled(Exception):
 
 
 def _publish_sync(session_id: int, modification_id: int, event: dict) -> None:
-    """事件持久化；实时 SSE 在异步任务中通过 _publish 推送。"""
-    if event.get("type") in {"stage", "thought", "file_written", "diff", "error", "completed", "cancelled"}:
-        with SessionLocal() as db:
-            db.add(Message(
-                session_id=session_id,
-                role="assistant",
-                content=str(event.get("content") or event.get("path") or event.get("error") or event.get("type")),
-                msg_type=f"modification_{event.get('type')}",
-                tool_call_json=event,
-            ))
-            db.commit()
+    """Persist replayable modification events without storing full source as chat text."""
+    event_type = str(event.get("type") or "")
+    mapping = {
+        "stage": ("stage", str(event.get("stage") or "")),
+        "thought": ("think", str(event.get("content") or "")),
+        "tool_call_completed": ("tool_call", str(event.get("detail") or "")),
+        "file_written": ("file_written", str(event.get("path") or "")),
+        "diff": ("modification_diff", ""),
+        "completed": ("modification_summary", str(event.get("summary") or "修改完成")),
+        "task_error": ("error", str(event.get("error") or "修改失败")),
+        "cancelled": ("info", "已取消这次修改"),
+    }
+    mapped = mapping.get(event_type)
+    if mapped is None:
+        return
+    msg_type, content = mapped
+    with SessionLocal() as db:
+        db.add(Message(
+            session_id=session_id,
+            role="assistant",
+            content=content,
+            msg_type=msg_type,
+            tool_call_json=event,
+        ))
+        db.commit()
 
 
 async def _publish(session_id: int, modification_id: int, event: dict) -> None:
@@ -61,7 +75,14 @@ def _locate_file(workspace: Path, snapshot: dict, related_files: list[str]) -> t
     text = str(snapshot.get("text") or "").strip()
     element_id = str(snapshot.get("id") or "").strip()
     class_name = str(snapshot.get("className") or snapshot.get("class") or "").strip()
-    for path in _candidate_files(workspace, related_files):
+    candidates = _candidate_files(workspace, related_files)
+    # Direct chat modifications do not have a DOM selection.  Give the Agent a
+    # deterministic project file instead of rejecting the request before it
+    # can inspect and edit the source.
+    if not (text or element_id or class_name) and candidates:
+        path = candidates[0]
+        return path, read_file(workspace, path)
+    for path in candidates:
         content = read_file(workspace, path)
         if text and text in content:
             return path, content
@@ -86,7 +107,11 @@ def _replacement_text(instruction: str) -> str:
 def _apply_mock_edit(content: str, snapshot: dict, instruction: str) -> tuple[str, str]:
     old_text = str(snapshot.get("text") or "").strip()
     if not old_text:
-        raise ValueError("选中元素没有可识别文本，当前版本暂不支持无文本元素修改")
+        direct_match = re.search(r"把\s*[“\"']?(.+?)[”\"']?\s*(?:改成|改为|替换为|替换成)", instruction.strip())
+        if direct_match:
+            old_text = direct_match.group(1).strip().strip("“”\"'")
+    if not old_text:
+        raise ValueError("直接修改请说明原文本与目标文本，例如：把旧标题改成新品发布")
     new_text = _replacement_text(instruction)
     if old_text not in content:
         raise ValueError("源码中未找到选中元素的文本，页面可能已刷新，请重新选择")
@@ -192,7 +217,7 @@ async def run_modification_task(modification_id: int) -> None:
             changed_content = read_file(workspace, changed_path)
             await _publish(session_id, modification_id, {"type": "file_written", "path": changed_path, "content": changed_content[:16000]})
         await _publish(session_id, modification_id, {"type": "diff", "files": file_diffs})
-        await _publish(session_id, modification_id, {"type": "completed", "status": "succeeded"})
+        await _publish(session_id, modification_id, {"type": "completed", "status": "succeeded", "summary": summary})
     except ModificationCancelled:
         with SessionLocal() as db:
             modification = db.get(Modification, modification_id)
@@ -208,6 +233,6 @@ async def run_modification_task(modification_id: int) -> None:
                 modification.status = "failed"
                 modification.finished_at = datetime.now()
                 db.commit()
-        await _publish(session_id, modification_id, {"type": "error", "error": str(exc)})
+        await _publish(session_id, modification_id, {"type": "task_error", "error": str(exc)})
     finally:
         await broker.close(modification_id)

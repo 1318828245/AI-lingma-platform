@@ -48,7 +48,10 @@ const props = defineProps<{
   sessionId?: number;
   element: ElementSnapshot | null;
 }>();
-const emit = defineEmits<{ (event: "completed"): void }>();
+const emit = defineEmits<{
+  (event: "submitted", modification: Modification, instruction: string): void;
+  (event: "completed"): void;
+}>();
 
 const instruction = ref("");
 const busy = ref(false);
@@ -78,7 +81,7 @@ function watchModification(modificationId: number) {
     closeStream();
     emit("completed");
   });
-  eventSource.addEventListener("error", async (event) => {
+  eventSource.addEventListener("task_error", async (event) => {
     const data = JSON.parse((event as MessageEvent).data || "{}");
     statusText.value = data.error || "修改失败";
     busy.value = false;
@@ -109,6 +112,7 @@ async function submit() {
       element_snapshot: props.element,
       instruction: instruction.value.trim(),
     });
+    emit("submitted", modification, instruction.value.trim());
     watchModification(modification.id);
   } catch (error: any) {
     busy.value = false;

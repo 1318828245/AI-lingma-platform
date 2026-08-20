@@ -180,6 +180,14 @@
                 </div>
               </div>
 
+              <div v-else-if="entry.kind === 'diff'" class="entry collapsible diff-entry" :class="{ open: !entry.collapsed }" @click="toggleCollapsed(entry, $event)">
+                <span class="entry-icon"><ToolIcon name="pencil" /></span>
+                <span class="entry-title">修改差异</span>
+                <span class="entry-hint">{{ entry.detail || '已生成变更' }}</span>
+                <span class="chevron">{{ entry.collapsed ? "▸" : "▾" }}</span>
+                <pre v-if="!entry.collapsed" class="code-preview diff-code"><code>{{ entry.content }}</code></pre>
+              </div>
+
               <!-- 构建日志（可折叠） -->
               <div
                 v-else-if="entry.kind === 'build'"
@@ -221,18 +229,18 @@
               v-model="requirement"
               type="textarea"
               :rows="3"
-              :disabled="!!runningGen"
-              placeholder="描述需求，右侧预览会随生成实时更新…"
+              :disabled="inputLocked"
+              placeholder="描述需求，或直接输入修改要求；点选元素后会自动修改选中内容…"
               @keydown.enter.exact.prevent="submitRequirement"
             />
             <div class="input-side">
               <el-button
                 type="primary"
                 :loading="submitting"
-                :disabled="!!runningGen"
+                :disabled="inputLocked"
                 @click="submitRequirement"
               >
-                生成
+                发送
               </el-button>
               <el-button
                 v-if="runningGen?.status === 'running'"
@@ -287,6 +295,7 @@
                 :generation-id="runningGen?.id"
                 :session-id="runningGen?.session_id"
                 :element="selectedElement"
+                @submitted="onModificationSubmitted"
                 @completed="onModificationCompleted"
               />
             </div>
@@ -336,10 +345,12 @@ import {
   listSessions,
   updateProject,
 } from "../api/projects";
+import { createModification, modificationEventUrl } from "../api/modifications";
 import type {
   ElementSnapshot,
   Generation,
   Message,
+  Modification,
   Project,
   SseEvent,
 } from "../types";
@@ -353,6 +364,7 @@ interface ChatEntry {
     | "think"
     | "tools"
     | "file"
+    | "diff"
     | "build"
     | "error"
     | "info";
@@ -386,6 +398,8 @@ const project = ref<Project | null>(null);
 const requirement = ref("");
 const entries = ref<ChatEntry[]>([]);
 const runningGen = ref<Generation | null>(null);
+const runningModification = ref<Modification | null>(null);
+const activeSessionId = ref<number | undefined>();
 // 未运行任务时不高亮任一阶段；避免重新进入已完成项目后误显示“解析中”。
 const progressStage = ref("idle");
 const submitting = ref(false);
@@ -393,6 +407,13 @@ const previewRefresh = ref(0);
 const previewError = ref("");
 const generationActive = ref(false);
 const selectedElement = ref<ElementSnapshot | null>(null);
+const generationRunning = computed(() =>
+  ["pending", "running"].includes(runningGen.value?.status || "")
+);
+const modificationRunning = computed(() =>
+  ["pending", "running", "cancel_requested"].includes(runningModification.value?.status || "")
+);
+const inputLocked = computed(() => generationRunning.value || modificationRunning.value);
 const generationWaitingText = computed(() => {
   if (!generationActive.value) return "";
   const labels: Record<string, string> = {
@@ -413,6 +434,7 @@ const chatWidth = ref(560);
 let resizeMove: ((event: PointerEvent) => void) | null = null;
 let resizeEnd: (() => void) | null = null;
 let eventSource: EventSource | null = null;
+let modificationEventSource: EventSource | null = null;
 let seq = 0;
 let thinkBuffer = "";
 let assistantBuffer = "";
@@ -643,8 +665,8 @@ onMounted(async () => {
   project.value = await getProject(projectId);
   const sessions = await listSessions(projectId);
   if (sessions.length) {
-    const history = (await listMessages(sessions[0].id)) as Message[];
-    entries.value = historyToEntries(history);
+    activeSessionId.value = sessions[0].id;
+    await reloadHistory();
   }
   // 首页“生成项目”带提示词跳转：自动开始生成
   const autoRequirement = route.query.requirement;
@@ -659,6 +681,13 @@ onMounted(async () => {
   }
 });
 
+async function reloadHistory() {
+  if (!activeSessionId.value) return;
+  const history = (await listMessages(activeSessionId.value)) as Message[];
+  seq = 0;
+  entries.value = historyToEntries(history);
+}
+
 function historyToEntries(history: Message[]): ChatEntry[] {
   const list: ChatEntry[] = [];
   let currentTools: ChatEntry | null = null;
@@ -671,6 +700,18 @@ function historyToEntries(history: Message[]): ChatEntry[] {
     if (m.msg_type === "summary") {
       currentTools = null;
       list.push({ id: ++seq, kind: "assistant", content: m.content, collapsed: false });
+      continue;
+    }
+    if (m.msg_type === "modification_summary") {
+      currentTools = null;
+      list.push({ id: ++seq, kind: "assistant", content: m.content, collapsed: false });
+      continue;
+    }
+    if (m.msg_type === "modification_diff") {
+      currentTools = null;
+      const files = ((m.tool_call_json || {}) as { files?: Array<{ path?: string; diff?: string }> }).files || [];
+      const content = files.map((file) => file.diff || "").filter(Boolean).join("\n");
+      list.push({ id: ++seq, kind: "diff", detail: files.map((file) => file.path).filter(Boolean).join(", "), content, collapsed: true });
       continue;
     }
     if (m.msg_type === "stage") {
@@ -747,6 +788,7 @@ function historyToEntries(history: Message[]): ChatEntry[] {
 onBeforeUnmount(() => {
   if (flushTimer !== null) clearTimeout(flushTimer);
   eventSource?.close();
+  modificationEventSource?.close();
   resizeEnd?.();
 });
 
@@ -754,6 +796,10 @@ async function submitRequirement() {
   const text = requirement.value.trim();
   if (!text) {
     ElMessage.warning("先描述一下你的需求");
+    return;
+  }
+  if (shouldSubmitModification(text)) {
+    await submitDirectModification(text);
     return;
   }
   submitting.value = true;
@@ -772,6 +818,102 @@ async function submitRequirement() {
   } finally {
     submitting.value = false;
   }
+}
+
+function shouldSubmitModification(text: string) {
+  if (selectedElement.value) return true;
+  return /(?:修改|改成|改为|替换|调整|删除|新增|添加)/.test(text);
+}
+
+async function submitDirectModification(text: string) {
+  submitting.value = true;
+  try {
+    push({ kind: "user", content: text });
+    const element = selectedElement.value || {
+      tag: "",
+      text: "",
+      id: "",
+      className: "",
+      selector: "",
+      html: "",
+      rect: { x: 0, y: 0, width: 0, height: 0 },
+    };
+    const modification = await createModification(projectId, {
+      generation_id: runningGen.value?.id,
+      session_id: activeSessionId.value,
+      selector: element.selector ? { css: element.selector } : {},
+      element_snapshot: element,
+      instruction: text,
+    });
+    requirement.value = "";
+    onModificationSubmitted(modification, text, false);
+  } catch (error: any) {
+    ElMessage.error(error.response?.data?.detail || "提交修改失败，请重试");
+  } finally {
+    submitting.value = false;
+  }
+}
+
+function onModificationSubmitted(modification: Modification, instruction: string, addUserMessage = true) {
+  if (addUserMessage) push({ kind: "user", content: instruction });
+  runningModification.value = modification;
+  watchModification(modification.id);
+}
+
+function watchModification(modificationId: number) {
+  modificationEventSource?.close();
+  modificationEventSource = new EventSource(modificationEventUrl(modificationId));
+  const parse = (event: Event) => JSON.parse((event as MessageEvent).data) as SseEvent;
+  modificationEventSource.addEventListener("stage", (event) => {
+    const stage = String(parse(event).stage || "");
+    const labels: Record<string, string> = { locate: "正在定位待修改源码", edit: "正在应用修改" };
+    push({ kind: "info", content: labels[stage] || "正在执行修改" });
+  });
+  modificationEventSource.addEventListener("thought", (event) => {
+    const content = String(parse(event).content || "").trim();
+    if (content) push({ kind: "think", content, collapsed: true });
+  });
+  modificationEventSource.addEventListener("reasoning_delta", (event) => {
+    const text = String(parse(event).text || "");
+    if (text) queueDelta("think", text);
+  });
+  modificationEventSource.addEventListener("assistant_delta", (event) => {
+    const text = String(parse(event).text || "");
+    if (text) queueDelta("assistant", text);
+  });
+  modificationEventSource.addEventListener("stream_end", endStreaming);
+  modificationEventSource.addEventListener("tool_call_started", (event) => {
+    const data = parse(event); const tool = String(data.tool || "");
+    const args = (data.args || {}) as Record<string, unknown>;
+    const detail = typeof args.path === "string" ? args.path : Array.isArray(args.command) ? args.command.join(" ") : "";
+    let group = lastEntry();
+    if (group?.kind !== "tools") group = push({ kind: "tools", items: [] });
+    group.items?.push({ tool, detail, pending: true });
+  });
+  modificationEventSource.addEventListener("tool_call_completed", (event) => {
+    const data = parse(event); const tool = String(data.tool || "");
+    for (const entry of [...entries.value].reverse()) {
+      const item = entry.kind === "tools" ? [...(entry.items || [])].reverse().find((candidate) => candidate.tool === tool && candidate.pending) : undefined;
+      if (item) { item.pending = false; item.ok = data.ok !== false; item.error = data.error ? String(data.error) : undefined; if (!item.detail && data.detail) item.detail = String(data.detail); break; }
+    }
+  });
+  modificationEventSource.addEventListener("file_written", (event) => {
+    const data = parse(event); const path = String(data.path || "");
+    push({ kind: "file", detail: path, collapsed: true });
+  });
+  modificationEventSource.addEventListener("diff", (event) => {
+    const files = (parse(event).files || []) as Array<{ path?: string; diff?: string }>;
+    push({ kind: "diff", detail: files.map((file) => file.path).filter(Boolean).join(", "), content: files.map((file) => file.diff || "").join("\n"), collapsed: true });
+  });
+  modificationEventSource.addEventListener("completed", (event) => {
+    const data = parse(event); endStreaming();
+    push({ kind: "assistant", content: String(data.summary || "修改完成"), collapsed: false });
+    runningModification.value = null; modificationEventSource?.close(); onModificationCompleted(); void reloadHistory();
+  });
+  modificationEventSource.addEventListener("task_error", (event) => {
+    const error = String(parse(event).error || "修改失败"); endStreaming(); push({ kind: "error", content: error }); runningModification.value = null; modificationEventSource?.close();
+  });
+  modificationEventSource.addEventListener("cancelled", () => { push({ kind: "info", content: "已取消这次修改" }); runningModification.value = null; modificationEventSource?.close(); });
 }
 
 function watchGeneration(genId: number) {
@@ -924,6 +1066,7 @@ function watchGeneration(genId: number) {
     eventSource?.close();
     previewRefresh.value += 1;
     refreshStatus(event.generation_id as number);
+    void reloadHistory();
   });
 
   eventSource.addEventListener("error", (e) => {

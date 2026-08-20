@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, get_current_user_sse, get_db
 from app.models.modification import Modification
+from app.models.message import Message
 from app.models.user import User
 from app.schemas.modification import ModificationCreate, ModificationOut
 from app.services.generation import resolve_session
@@ -51,6 +52,14 @@ async def create_modification(
         related_files_json=payload.related_files,
         status="pending",
         max_attempts=2,
+    )
+    db.add(
+        Message(
+            session_id=session.id,
+            role="user",
+            content=payload.instruction.strip(),
+            msg_type="text",
+        )
     )
     db.add(modification)
     db.commit()

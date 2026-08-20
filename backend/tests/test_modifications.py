@@ -32,6 +32,10 @@ def test_modification_text_edit_diff_and_version(client, admin_headers):
     assert created.status_code == 201, created.text
     modification_id = created.json()["id"]
 
+    session_id = created.json()["session_id"]
+    messages = client.get(f"/api/sessions/{session_id}/messages", headers=admin_headers).json()
+    assert any(message["role"] == "user" and message["content"] == "把标题改成新标题" for message in messages)
+
     status = None
     for _ in range(100):
         status = client.get(
@@ -49,3 +53,28 @@ def test_modification_text_edit_diff_and_version(client, admin_headers):
 
         workspace = project_workspace(project_id)
         assert "新标题" in (workspace / "index.html").read_text(encoding="utf-8")
+
+
+def test_direct_chat_modification_uses_instruction_target(client, admin_headers):
+    project = client.post(
+        "/api/projects",
+        headers=admin_headers,
+        json={"name": "Direct edit", "template": "blank", "tech_stack": "html"},
+    ).json()
+    with SessionLocal() as db:
+        write_project_file(db, project["id"], "index.html", "<h1>旧标题</h1>")
+        db.commit()
+
+    created = client.post(
+        f"/api/projects/{project['id']}/modifications",
+        headers=admin_headers,
+        json={"instruction": "把旧标题改成新标题"},
+    )
+    assert created.status_code == 201, created.text
+    modification_id = created.json()["id"]
+    for _ in range(100):
+        status = client.get(f"/api/modifications/{modification_id}", headers=admin_headers).json()
+        if status["status"] in {"succeeded", "failed", "cancelled"}:
+            break
+        time.sleep(0.02)
+    assert status["status"] == "succeeded", status
