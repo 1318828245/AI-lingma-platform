@@ -29,6 +29,12 @@
 
 提交首次生成前，平台会先由技术栈分流 Agent 判断需求更适合 HTML 多文件页面还是 Vue 3 工程。仅当建议与首页已选技术栈不一致时才弹出确认：可以切换到建议技术栈，也可以明确保留原选择。确认后的项目标签、工作区和生成 Agent 约束使用同一技术栈；HTML 项目写入 Vue/Vite 文件会被服务端护轨拦截。
 
+### 验收与性能
+
+- `backend/evals/agent_regression_cases.json` 定义路由、生成和修改提示词的离线回归样例；真实模型验收使用 `backend/smoke_*.py`。
+- 浏览器可见行为的验收步骤见 `docs/BROWSER_ACCEPTANCE.md`。
+- 前端入口按需加载 Element Plus 的消息组件样式，并仅打包 Latin Web 字体；中文内容由系统字体回退。路由页面维持动态加载。
+
 ### 存储命名
 
 项目显示名称可以使用中文，但所有文件系统产物只使用 `yyyy-mm-dd-hh-mm-ss-random`。同一个标识同时用于 `storage/workspaces/` 下的工作区、`storage/thumbnails/<id>.png` 和 `storage/versions/<id>/`；版本快照子目录也使用同样格式，绝不使用项目数字 ID。

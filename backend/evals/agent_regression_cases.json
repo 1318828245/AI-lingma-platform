@@ -1,0 +1,38 @@
+{
+  "route": [
+    {
+      "name": "landing_page_keeps_html",
+      "requirement": "做一个展示个人介绍、作品和联系方式的单页名片",
+      "expected_stack": "html"
+    },
+    {
+      "name": "visual_complexity_still_html",
+      "requirement": "做一个深色渐变、带动画和响应式卡片的产品落地页",
+      "expected_stack": "html"
+    },
+    {
+      "name": "admin_dashboard_uses_vue",
+      "requirement": "做一个带登录、路由、任务筛选和分页编辑的后台管理仪表盘",
+      "expected_stack": "vue3"
+    },
+    {
+      "name": "multiple_stateful_views_use_vue",
+      "requirement": "做一个有项目列表、详情页、成员管理、路由和状态管理的协作应用",
+      "expected_stack": "vue3"
+    }
+  ],
+  "generation_contract": [
+    "list_files",
+    "read_file",
+    "write_file",
+    "edit_file",
+    "run_command",
+    "finish(summary)"
+  ],
+  "modification_contract": [
+    "先读取候选源码",
+    "不要虚构文件或改动",
+    "一个具体问题",
+    "点击/提交行为和可见反馈"
+  ]
+}

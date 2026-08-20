@@ -19,6 +19,8 @@
 - [x] 模型与工具调用分层：`services/model` 统一模型 Provider 契约，`agents/tooling` 统一 schema、调用/结果、策略和执行；生成与修改 Agent 通过同一工具链运行，修改 Agent 无命令权限。
 - [x] 提示词工程化：提示词收敛为路由、生成、修改 3 个 Agent 模板，以及生成工作流的解析、计划、总结 3 个子任务模板；均位于 `backend/app/prompts/`，定义角色、输入边界、流程、失败策略与输出契约。
 - [x] 真实模型验收：DeepSeek 已通过 HTML 生成、路由 Agent（静态页保持 HTML、后台页建议 Vue、用户保留 HTML）与修改 Agent（新增按钮具有点击反馈）冒烟；脚本位于 `backend/smoke_*.py`。
+- [x] Agent 评测基线：`backend/evals/agent_regression_cases.json` 固化 HTML/Vue 路由、生成工具工作流和修改澄清/交互约束；pytest 自动加载验证。
+- [x] 前端首屏优化：移除全量 Element Plus 安装，改为消息组件按需样式；字体改为 Latin 子集，路由页面保持异步加载。
 
 - [x] 工作区按技术栈分流：Vue 项目位于 `storage/workspaces/vue/<slug>`，HTML/多文件项目位于 `storage/workspaces/multifile/<slug>`；新建与重命名均拒绝纯数字项目名，slug 不再使用简单数字。
 - [x] Vite 构建追加 `--base=./`，预览服务优先托管 `dist`，解决嵌入式预览中资源请求落到平台根路径而导致白屏的问题。
