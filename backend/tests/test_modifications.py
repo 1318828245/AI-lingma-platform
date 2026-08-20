@@ -2,6 +2,21 @@ import time
 
 from app.core.database import SessionLocal
 from app.services.project import write_project_file
+from app.services.modification import _validate_interactive_control
+
+
+def test_new_button_requires_click_handler(tmp_path):
+    page = tmp_path / "index.html"
+    page.write_text("<button>Save</button>", encoding="utf-8")
+    try:
+        _validate_interactive_control(tmp_path, ["index.html"], "增加一个保存按钮")
+    except ValueError as exc:
+        assert "点击行为" in str(exc)
+    else:
+        raise AssertionError("button without handler must be rejected")
+
+    page.write_text("<button onclick=\"save()\">Save</button>", encoding="utf-8")
+    _validate_interactive_control(tmp_path, ["index.html"], "增加一个保存按钮")
 
 
 def test_modification_text_edit_diff_and_version(client, admin_headers):

@@ -268,7 +268,23 @@ body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; background: #f1f5
 
 
 def _output_guardrail_check(state: GenerationState, rel_path: str, content: str) -> None:
+    normalized_path = rel_path.replace("\\", "/").lower()
     lowered = content.lower()
+    if state["tech_stack"] in ("html", "static") and (
+        normalized_path.endswith((".vue", "package.json", "vite.config.js", "vite.config.ts"))
+        or "from \"vue\"" in lowered
+        or "from 'vue'" in lowered
+        or "createapp(" in lowered
+    ):
+        _record_guardrail(
+            state,
+            "output",
+            "block:tech-stack-mismatch",
+            "high",
+            "block",
+            f"{rel_path}: attempted Vue output for an HTML project",
+        )
+        raise GenerationBlocked("技术栈不匹配：HTML 项目不能写入 Vue/Vite 工程文件")
     for pattern in OUTPUT_BLOCK_PATTERNS:
         if pattern in lowered:
             _record_guardrail(

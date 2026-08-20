@@ -81,7 +81,7 @@ async def capture_screenshot(url: str, output: Path, timeout: int | None = None)
                 "--no-first-run",
                 "--disable-extensions",
                 "--window-size=1280,800",
-                "--virtual-time-budget=5000",
+                f"--virtual-time-budget={settings.screenshot_virtual_time_budget_ms}",
                 f"--user-data-dir={user_dir}",
                 f"--screenshot={output}",
                 url,

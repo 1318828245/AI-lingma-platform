@@ -2,7 +2,7 @@ import asyncio
 import json
 from functools import partial
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -102,16 +102,24 @@ def cancel_modification(modification_id: int, user: User = Depends(get_current_u
 @router.get("/api/modifications/{modification_id}/events")
 async def modification_events(
     modification_id: int,
+    last_event_id: str | None = Header(default=None),
     user: User = Depends(get_current_user_sse),
     db: Session = Depends(get_db),
 ):
     _get_owned_modification(db, modification_id, user.id)
     broker = get_broker()
     queue = await broker.subscribe(modification_id)
+    try:
+        cursor = int(last_event_id or "0")
+    except ValueError:
+        cursor = 0
+    replay = await broker.replay(modification_id, cursor) if cursor > 0 else []
 
     async def stream():
         try:
             yield ": connected\n\n"
+            for event in replay:
+                yield f"id: {event.get('event_id', '')}\nevent: {event['type']}\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
             while True:
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=15)
@@ -121,6 +129,7 @@ async def modification_events(
                 if event.get("type") == "closed":
                     break
                 yield (
+                    f"id: {event.get('event_id', '')}\n"
                     f"event: {event['type']}\n"
                     f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                 )

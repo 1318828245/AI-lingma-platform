@@ -3,10 +3,12 @@ from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, get_db
 from app.models.project import Project
+from app.models.file import File
+from app.models.generation import Generation
 from app.models.template import Template
 from app.models.user import User
 from app.schemas.project import ProjectCreate, ProjectOut, ProjectUpdate
-from app.services.project import create_project, delete_project, get_owned_project
+from app.services.project import create_project, delete_project, get_owned_project, project_workspace
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -63,6 +65,29 @@ def update_project(
 ):
     project = get_owned_project(db, project_id, user.id)
     data = payload.model_dump(exclude_unset=True)
+    tech_stack = data.pop("tech_stack", None)
+    if tech_stack is not None and tech_stack != project.tech_stack:
+        has_generated_content = (
+            db.query(File).filter(File.project_id == project.id).first() is not None
+            or db.query(Generation).filter(Generation.project_id == project.id).first() is not None
+        )
+        if has_generated_content:
+            raise HTTPException(
+                status_code=409,
+                detail="项目已有生成内容，不能直接切换技术栈；请新建项目后重新生成",
+            )
+        old_workspace = project_workspace(project)
+        project.tech_stack = tech_stack
+        new_workspace = project_workspace(project)
+        new_workspace.mkdir(parents=True, exist_ok=True)
+        if old_workspace != new_workspace and old_workspace.exists():
+            try:
+                old_workspace.rmdir()
+            except OSError:
+                raise HTTPException(
+                    status_code=409,
+                    detail="旧工作区不是空目录，不能安全切换技术栈",
+                )
     for key, value in data.items():
         if value is not None:
             setattr(project, key, value)

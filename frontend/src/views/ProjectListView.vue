@@ -77,6 +77,8 @@
         v-for="p in projects"
         :key="p.id"
         class="panel project-card"
+        :data-project-id="p.id"
+        :ref="(element) => observeProjectCard(p.id, element as Element | null)"
         role="button"
         tabindex="0"
         @click="openGeneration(p)"
@@ -84,6 +86,7 @@
       >
         <div class="thumb">
           <img
+            v-if="thumbRequested[p.id]"
             class="thumb-img"
             :class="{ visible: thumbState[p.id] === 'ok' }"
             :src="thumbSrc(p)"
@@ -133,7 +136,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { createProject, deleteProject, listProjects } from "../api/projects";
@@ -155,9 +158,10 @@ const quickTemplates = [
   "做一个商品管理表格页，带搜索筛选",
 ];
 const thumbState = ref<Record<number, "loading" | "ok" | "error">>({});
+const thumbRequested = ref<Record<number, boolean>>({});
 const thumbVersions = ref<Record<number, number>>({});
-const thumbRetried = ref<Record<number, boolean>>({});
 const thumbForced = ref<Record<number, boolean>>({});
+let thumbnailObserver: IntersectionObserver | undefined;
 
 function thumbSrc(p: Project) {
   return `/api/projects/${p.id}/screenshot?token=${encodeURIComponent(
@@ -167,15 +171,6 @@ function thumbSrc(p: Project) {
 
 function thumbError(p: Project) {
   thumbState.value[p.id] = "error";
-  // 自动重试一次（截图可能还在生成中或 Edge 首次启动较慢）
-  if (!thumbRetried.value[p.id]) {
-    thumbRetried.value[p.id] = true;
-    thumbForced.value[p.id] = true;
-    setTimeout(() => {
-      thumbVersions.value[p.id] = (thumbVersions.value[p.id] || 0) + 1;
-      thumbState.value[p.id] = "loading";
-    }, 2500);
-  }
 }
 
 function retryThumb(p: Project) {
@@ -184,12 +179,39 @@ function retryThumb(p: Project) {
   thumbState.value[p.id] = "loading";
 }
 
+function requestThumb(projectId: number) {
+  if (thumbRequested.value[projectId]) return;
+  thumbRequested.value[projectId] = true;
+  thumbState.value[projectId] = "loading";
+}
+
+function observeProjectCard(projectId: number, element: Element | null) {
+  if (!element || thumbRequested.value[projectId]) return;
+  if (!thumbnailObserver) {
+    requestThumb(projectId);
+    return;
+  }
+  thumbnailObserver.observe(element);
+}
+
 onMounted(async () => {
+  if ("IntersectionObserver" in window) {
+    thumbnailObserver = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          const projectId = Number((entry.target as HTMLElement).dataset.projectId);
+          if (Number.isFinite(projectId)) requestThumb(projectId);
+          thumbnailObserver?.unobserve(entry.target);
+        });
+      },
+      { rootMargin: "320px 0px" }
+    );
+  }
   projects.value = await listProjects();
-  projects.value.forEach((p) => {
-    thumbState.value[p.id] = "loading";
-  });
 });
+
+onBeforeUnmount(() => thumbnailObserver?.disconnect());
 
 async function quickCreate() {
   const prompt = quickPrompt.value.trim();

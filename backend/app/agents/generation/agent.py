@@ -14,7 +14,6 @@ from app.agents.generation.nodes import (
     _check_cancel,
     _output_guardrail_check,
 )
-from app.agents.generation.prompts import PROMPT_GENERATION
 from app.agents.generation.state import GenerationState
 from app.agents.tooling.contracts import ToolCall, ToolResult
 from app.agents.tooling.definitions import GENERATION_TOOL_NAMES, tool_schemas
@@ -23,6 +22,7 @@ from app.agents.tooling.presentation import display_args, display_detail, error_
 from app.agents.tools import edit_file, list_files, read_file, write_file
 from app.core.config import get_settings
 from app.core.database import SessionLocal
+from app.prompts import render_prompt
 from app.services.chat_log import save_generation_event, save_message
 from app.services.events import get_broker
 from app.services.llm import LLMClient
@@ -130,24 +130,16 @@ TOOL_SCHEMAS = tool_schemas(GENERATION_TOOL_NAMES)
 def _build_system_prompt(state: GenerationState) -> str:
     parsed = state.get("parsed_requirement", {})
     plan = state.get("plan", [])
-    return (
-        PROMPT_GENERATION
-        + "\n\n【当前项目】\n技术栈："
-        + state["tech_stack"]
-        + "\n需求解析："
-        + json.dumps(parsed, ensure_ascii=False)
-        + "\n实施计划："
-        + json.dumps(plan, ensure_ascii=False)
+    return render_prompt(
+        "generation_agent.md",
+        tech_stack=state["tech_stack"],
+        parsed_requirement=json.dumps(parsed, ensure_ascii=False),
+        plan=json.dumps(plan, ensure_ascii=False),
     )
 
 
 def _build_user_prompt(state: GenerationState) -> str:
-    return (
-        "用户需求：\n"
-        + state["requirement"]
-        + "\n\n请先 list_files / read_file 了解项目结构，再增量改造或新建文件，"
-        "完成后调用 finish(summary) 给出交付总结。"
-    )
+    return state["requirement"]
 
 
 async def _emit(state: GenerationState, event: dict) -> None:
@@ -311,7 +303,7 @@ async def run_generation_agent(
             messages.append(
                 {
                     "role": "user",
-                    "content": "请通过工具完成工作，不要只输出文字；完成后调用 finish(summary)。",
+                    "content": "Continue the required workflow: use tools to complete the work or call finish(summary).",
                 }
             )
             continue

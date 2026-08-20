@@ -24,6 +24,21 @@ export async function getActiveGeneration(projectId: number): Promise<Generation
   return data;
 }
 
+export type StackAdvice = {
+  selected_stack: "html" | "vue3";
+  recommended_stack: "html" | "vue3";
+  needs_confirmation: boolean;
+  reason: string;
+};
+
+export async function getStackAdvice(
+  projectId: number,
+  requirement: string
+): Promise<StackAdvice> {
+  const { data } = await api.post(`/projects/${projectId}/stack-advice`, { requirement });
+  return data;
+}
+
 export async function cancelGeneration(id: number) {
   const { data } = await api.post(`/generations/${id}/cancel`);
   return data;

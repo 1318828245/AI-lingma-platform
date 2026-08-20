@@ -47,6 +47,11 @@
         <p class="empty-title">{{ runningTitle }}</p>
         <p class="muted">{{ runningHint }}</p>
       </div>
+      <div v-else-if="ready && frameLoading" class="preview-state loading-frame" role="status">
+        <span class="spinner" />
+        <p class="empty-title">正在加载预览</p>
+        <p class="muted">大型 Vue 工程首次加载需要下载和初始化脚本</p>
+      </div>
       <div v-else-if="!ready && error" class="empty error-state">
         <p class="empty-icon" aria-hidden="true">!</p>
         <p class="empty-title">预览暂不可用</p>
@@ -124,6 +129,7 @@ const previewStatus = ref<PreviewStatus | null>(null);
 const loading = ref(true);
 const viewport = ref<"desktop" | "tablet" | "mobile">("desktop");
 const frameKey = ref(0);
+const frameLoading = ref(false);
 const frameRef = ref<HTMLIFrameElement | null>(null);
 const pickerEnabled = ref(false);
 let pickerCleanup: (() => void) | null = null;
@@ -242,6 +248,7 @@ async function checkStatus() {
   try {
     previewStatus.value = await getPreviewStatus(props.projectId);
     if (previewStatus.value?.status === "ready") {
+      frameLoading.value = true;
       frameKey.value += 1;
     }
   } finally {
@@ -258,6 +265,7 @@ function ensurePreviewCookie() {
 function reload() {
   pickerCleanup?.();
   pickerCleanup = null;
+  frameLoading.value = true;
   frameKey.value += 1;
 }
 
@@ -351,6 +359,7 @@ function togglePicker() {
 }
 
 function onFrameLoad() {
+  frameLoading.value = false;
   if (pickerEnabled.value) installPicker();
 }
 
@@ -521,6 +530,9 @@ watch(
 }
 .preview-state.generating {
   backdrop-filter: blur(2px);
+}
+.preview-state.loading-frame {
+  background: color-mix(in srgb, var(--canvas-deep) 64%, transparent);
 }
 .error-state {
   color: #a13a3a;

@@ -360,6 +360,7 @@ import {
   generationEventUrl,
   getActiveGeneration,
   getGeneration,
+  getStackAdvice,
 } from "../api/generations";
 import {
   getProject,
@@ -772,7 +773,11 @@ function historyToEntries(history: Message[]): ChatEntry[] {
     if (m.msg_type === "modification_summary") {
       currentTools = null;
       const event = (m.tool_call_json || {}) as { version_id?: number };
-      list.push({ id: ++seq, kind: "modification-result", content: m.content, versionId: event.version_id, collapsed: false });
+      // Keep the model's natural-language completion visible after history is
+      // reloaded; the review card is an action affordance, not a replacement
+      // for the summary it produced.
+      list.push({ id: ++seq, kind: "assistant", content: m.content, collapsed: false });
+      list.push({ id: ++seq, kind: "modification-result", versionId: event.version_id, collapsed: false });
       continue;
     }
     if (m.msg_type === "modification_review") {
@@ -885,6 +890,7 @@ async function submitRequirement() {
   }
   submitting.value = true;
   try {
+    if (!(await confirmStackForRequirement(text))) return;
     push({ kind: "user", content: text });
     const gen = await createGeneration(projectId, text);
     requirement.value = "";
@@ -898,6 +904,45 @@ async function submitRequirement() {
     ElMessage.error(error.response?.data?.detail || "提交失败，请重试");
   } finally {
     submitting.value = false;
+  }
+}
+
+function stackLabel(stack: "html" | "vue3") {
+  return stack === "vue3" ? "Vue 3 工程" : "HTML 多文件页面";
+}
+
+async function confirmStackForRequirement(text: string): Promise<boolean> {
+  try {
+    const advice = await getStackAdvice(projectId, text);
+    if (!advice.needs_confirmation) return true;
+    const selected = stackLabel(advice.selected_stack);
+    const recommended = stackLabel(advice.recommended_stack);
+    try {
+      await ElMessageBox.confirm(
+        `当前项目选择的是“${selected}”。需求分析建议使用“${recommended}”：${advice.reason}\n\n是否切换技术栈后再开始生成？`,
+        "确认项目技术栈",
+        {
+          confirmButtonText: `切换为 ${recommended}`,
+          cancelButtonText: `仍使用 ${selected}`,
+          distinguishCancelAndClose: true,
+          closeOnClickModal: false,
+        }
+      );
+      project.value = await updateProject(projectId, {
+        tech_stack: advice.recommended_stack,
+      });
+      ElMessage.success(`已切换为${recommended}`);
+      return true;
+    } catch (action) {
+      if (action === "cancel") {
+        ElMessage.info(`将继续使用${selected}`);
+        return true;
+      }
+      return false;
+    }
+  } catch {
+    // Advice is a guard before generation, not a new availability dependency.
+    return true;
   }
 }
 
@@ -1004,11 +1049,20 @@ function watchModification(modificationId: number) {
   });
   modificationEventSource.addEventListener("completed", (event) => {
     const data = parse(event); endStreaming();
-    push({ kind: "modification-result", content: String(data.summary || "修改完成"), versionId: Number(data.version_id) || undefined, collapsed: false });
+    const summary = String(data.summary || "修改完成");
+    push({ kind: "assistant", content: summary, collapsed: false });
+    push({ kind: "modification-result", versionId: Number(data.version_id) || undefined, collapsed: false });
     runningModification.value = null; modificationActive.value = false; modificationStage.value = "done"; modificationEventSource?.close(); onModificationCompleted(); void reloadHistory();
   });
   modificationEventSource.addEventListener("task_error", (event) => {
     const error = String(parse(event).error || "修改失败"); endStreaming(); push({ kind: "error", content: error }); runningModification.value = null; modificationActive.value = false; modificationStage.value = "done"; modificationEventSource?.close();
+  });
+  modificationEventSource.addEventListener("clarification", (event) => {
+    const question = String(parse(event).question || "请补充需要修改的位置或预期效果。");
+    endStreaming();
+    push({ kind: "assistant", content: question, collapsed: false });
+    runningModification.value = null; modificationActive.value = false; modificationStage.value = "done"; modificationEventSource?.close();
+    void reloadHistory();
   });
   modificationEventSource.addEventListener("cancelled", () => { push({ kind: "info", content: "已取消这次修改" }); runningModification.value = null; modificationActive.value = false; modificationStage.value = "done"; modificationEventSource?.close(); });
 }

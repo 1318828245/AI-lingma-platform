@@ -1,7 +1,7 @@
 import asyncio
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -9,7 +9,13 @@ from app.core.config import get_settings
 from app.core.deps import get_current_user, get_current_user_sse, get_db
 from app.models.generation import Generation
 from app.models.user import User
-from app.schemas.generation import GenerationCreate, GenerationMessageIn, GenerationOut
+from app.schemas.generation import (
+    GenerationCreate,
+    GenerationMessageIn,
+    GenerationOut,
+    StackAdviceIn,
+    StackAdviceOut,
+)
 from app.services.events import get_broker
 from app.services.generation import (
     create_generation,
@@ -18,6 +24,7 @@ from app.services.generation import (
     add_message,
 )
 from app.services.project import get_owned_project
+from app.services.route_agent import route_tech_stack
 from app.services.task_manager import get_task_manager
 
 router = APIRouter(tags=["generations"])
@@ -25,6 +32,17 @@ router = APIRouter(tags=["generations"])
 
 def _gen_out(gen: Generation) -> GenerationOut:
     return GenerationOut.model_validate(gen)
+
+
+@router.post("/api/projects/{project_id}/stack-advice", response_model=StackAdviceOut)
+async def get_stack_advice(
+    project_id: int,
+    payload: StackAdviceIn,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    project = get_owned_project(db, project_id, user.id)
+    return await route_tech_stack(payload.requirement.strip(), project.tech_stack)
 
 
 @router.post(
@@ -94,16 +112,24 @@ def get_active_generation(
 @router.get("/api/generations/{generation_id}/events")
 async def generation_events(
     generation_id: int,
+    last_event_id: str | None = Header(default=None),
     user: User = Depends(get_current_user_sse),
     db: Session = Depends(get_db),
 ):
     get_generation_for_user(db, generation_id, user.id)
     broker = get_broker()
     queue = await broker.subscribe(generation_id)
+    try:
+        cursor = int(last_event_id or "0")
+    except ValueError:
+        cursor = 0
+    replay = await broker.replay(generation_id, cursor) if cursor > 0 else []
 
     async def stream():
         try:
             yield ": connected\n\n"
+            for event in replay:
+                yield f"id: {event.get('event_id', '')}\nevent: {event['type']}\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
             while True:
                 try:
                     event = await asyncio.wait_for(queue.get(), timeout=15)
@@ -113,6 +139,7 @@ async def generation_events(
                 if event.get("type") == "closed":
                     break
                 yield (
+                    f"id: {event.get('event_id', '')}\n"
                     f"event: {event['type']}\n"
                     f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                 )

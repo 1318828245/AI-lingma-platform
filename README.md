@@ -6,6 +6,10 @@
 
 修改 Agent 只允许编辑源码，不能修改 `dist`、`build` 等构建产物；Vue 项目修改成功后会重新构建预览。新增按钮、开关或表单等交互控件时，Agent 必须同时实现可用的行为与可见反馈。
 
+### 修改可靠性与 SSE 恢复
+
+修改会先创建编辑前快照；源码校验、交互控件校验或 Vue 重建失败时，工作区自动恢复到该快照。SSE 事件带递增 ID，浏览器断线重连会按 `Last-Event-ID` 补发未接收事件，避免漏掉运行阶段、工具或完成状态。
+
 用户用自然语言描述需求 → 自动生成可运行前端工程 → 实时预览点选修改 → 一键部署独立 URL。
 详细产品与技术规格见 [AI灵码平台-详细提示词-v3.md](AI灵码平台-详细提示词-v3.md)，构建进度见 `PROJECT_STATE.md`。
 
@@ -18,7 +22,12 @@
 - `services/model/`：以 `ModelRequest`、`ModelResponse`、`ModelToolCall` 作为供应商无关契约；当前 `OpenAICompatibleProvider` 负责 Chat Completions 请求与流式增量聚合。
 - `services/llm.py`：保留业务门面与 mock 模式，不再直接承担 HTTP/SSE 协议解析。
 - `agents/tooling/`：集中维护工具 schema、调用/结果契约、Agent 权限策略、执行器和安全展示摘要。
+- `prompts/`：所有 Agent 与模型辅助步骤的独立 Markdown 提示词；目录内 `README.md` 标明调用方和可注入变量，业务代码通过 `app.prompts` 加载。
 - 生成 Agent 可调用文件与构建工具；修改 Agent 不允许运行命令。所有工具调用均先经参数、敏感路径与写入大小校验，再进入副作用执行。
+
+### 技术栈确认
+
+提交首次生成前，平台会先由技术栈分流 Agent 判断需求更适合 HTML 多文件页面还是 Vue 3 工程。仅当建议与首页已选技术栈不一致时才弹出确认：可以切换到建议技术栈，也可以明确保留原选择。确认后的项目标签、工作区和生成 Agent 约束使用同一技术栈；HTML 项目写入 Vue/Vite 文件会被服务端护轨拦截。
 
 ### 存储命名
 

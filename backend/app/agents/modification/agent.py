@@ -10,6 +10,7 @@ from app.agents.tooling.executor import ToolExecutionContext, execute_tool
 from app.agents.tooling.presentation import display_args, display_detail, error_hint
 from app.agents.tools import edit_file, list_files, read_file, write_file
 from app.core.database import SessionLocal
+from app.prompts import render_prompt
 from app.services.events import get_broker
 from app.services.llm import LLMClient
 
@@ -95,12 +96,10 @@ async def _emit(state: ModificationState, event: dict) -> None:
 
 
 def _system_prompt(state: ModificationState) -> str:
-    return (
-        "你是前端局部修改 Agent。只处理用户选中的元素和修改指令，禁止重写无关文件。"
-        "必须先读取源码，优先使用 edit_file 做最小替换；不能定位时不要虚构修改，调用 finish 说明原因。"
-        "只能修改源码，严禁修改 dist、build 或其他构建产物。新增按钮、开关、表单或其他可点击控件时，必须同时实现与用户需求相符的点击/提交行为和可见反馈；没有指定业务动作时，至少提供明确、可用的本地 UI 状态反馈，不能只渲染无响应的外观。\n"
-        f"元素快照：{json.dumps(state.get('element_snapshot', {}), ensure_ascii=False)}\n"
-        f"候选文件：{json.dumps(state.get('related_files', []), ensure_ascii=False)}"
+    return render_prompt(
+        "modification_agent.md",
+        element_snapshot=json.dumps(state.get("element_snapshot", {}), ensure_ascii=False),
+        related_files=json.dumps(state.get("related_files", []), ensure_ascii=False),
     )
 
 
@@ -108,7 +107,7 @@ async def run_modification_agent(state: ModificationState) -> dict:
     llm = LLMClient()
     workspace = Path(state["workspace"])
     workspace.mkdir(parents=True, exist_ok=True)
-    user_prompt = f"修改指令：{state['instruction']}\n请完成修改后调用 finish(summary)。"
+    user_prompt = state["instruction"]
     messages: list[dict] = [
         {"role": "system", "content": _system_prompt(state)},
         {"role": "user", "content": user_prompt},
@@ -137,7 +136,7 @@ async def run_modification_agent(state: ModificationState) -> dict:
         if not tool_calls:
             if message.get("content"):
                 return {"summary": str(message["content"]), "changed_files": changed, "token_usage": usage_total}
-            messages.append({"role": "assistant", "content": "请使用工具完成修改。"})
+            messages.append({"role": "assistant", "content": "Use the available tools to complete the requested source change."})
             continue
         messages.append({"role": "assistant", "content": message.get("content") or "", "tool_calls": tool_calls})
         for index, raw_call in enumerate(tool_calls):

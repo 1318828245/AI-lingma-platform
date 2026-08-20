@@ -87,6 +87,13 @@ def preview_file(
         response = FileResponse(root / "index.html")
     else:
         raise HTTPException(status_code=404, detail="文件不存在")
+    # Vite emits content-hashed files under dist/assets. Cache them across
+    # iframe reloads so a large project does not re-download its full bundle
+    # whenever the preview refreshes; index.html remains revalidated.
+    if root.name == "dist" and clean.startswith("assets/"):
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    else:
+        response.headers["Cache-Control"] = "no-cache"
     # SPA fallback：非资源路径回退到 index.html
     if token:
         # 让无头浏览器/iframe 的静态资源自动带上鉴权 Cookie
@@ -144,4 +151,9 @@ async def project_screenshot(
         ok = await capture_screenshot(url, thumb)
         if not ok:
             raise HTTPException(status_code=404, detail="截图生成失败（环境不支持或无浏览器）")
-    return FileResponse(thumb, media_type="image/png")
+    response = FileResponse(thumb, media_type="image/png")
+    # A thumbnail is immutable until a new build explicitly invalidates it.
+    # Let the home page reuse it instead of revalidating a large project card
+    # every time the project list is opened.
+    response.headers["Cache-Control"] = "private, max-age=3600"
+    return response

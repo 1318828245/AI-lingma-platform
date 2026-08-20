@@ -17,11 +17,15 @@ from app.models.project import Project
 from app.services.events import get_broker
 from app.services.project import project_workspace, write_project_file
 from app.services.sandbox import validate_build
-from app.services.version import snapshot_project
+from app.services.version import get_version, rollback_project, snapshot_project
 from app.services.llm import LLMClient
 
 
 class ModificationCancelled(Exception):
+    pass
+
+
+class ModificationClarification(Exception):
     pass
 
 
@@ -35,6 +39,7 @@ def _publish_sync(session_id: int, modification_id: int, event: dict) -> None:
         "file_written": ("file_written", str(event.get("path") or "")),
         "diff": ("modification_diff", ""),
         "completed": ("modification_summary", str(event.get("summary") or "修改完成")),
+        "clarification": ("assistant", str(event.get("question") or "需要补充修改信息")),
         "task_error": ("error", str(event.get("error") or "修改失败")),
         "cancelled": ("info", "已取消这次修改"),
     }
@@ -146,15 +151,33 @@ def _diff_files(workspace: Path, before_files: dict[str, str], changed_files: li
     return result
 
 
+def _validate_interactive_control(workspace: Path, changed_files: list[str], instruction: str) -> None:
+    """Reject a newly requested button that has no executable interaction binding."""
+    if not re.search(r"(?:增加|新增|添加).{0,16}(?:按钮|按键)|(?:按钮|按键).{0,16}(?:增加|新增|添加)", instruction):
+        return
+    content = "\n".join(
+        read_file(workspace, path)
+        for path in changed_files
+        if Path(path).suffix.lower() in {".html", ".vue", ".jsx", ".tsx", ".js", ".ts"}
+    )
+    has_button = bool(re.search(r"<button\b", content, flags=re.IGNORECASE))
+    has_handler = bool(re.search(r"(?:@click|onClick|onclick|addEventListener\s*\(\s*['\"]click)", content))
+    if has_button and not has_handler:
+        raise ValueError("新增按钮缺少点击行为：请为按钮添加事件绑定与可见反馈")
+
+
 async def run_modification_task(modification_id: int) -> None:
     broker = get_broker()
     session_id = 0
+    project_id = 0
+    pre_edit_version_id: int | None = None
     try:
         with SessionLocal() as db:
             modification = db.get(Modification, modification_id)
             if modification is None:
                 return
             session_id = modification.session_id
+            project_id = modification.project_id
             project = db.get(Project, modification.project_id)
             if project is None:
                 raise ValueError("项目不存在")
@@ -179,13 +202,14 @@ async def run_modification_task(modification_id: int) -> None:
         # Capture the state immediately before editing so every successful
         # modification has a deterministic undo target.
         with SessionLocal() as db:
-            snapshot_project(
+            pre_edit_version = snapshot_project(
                 db,
                 modification.project_id,
                 source_type="modification_before",
                 source_id=modification_id,
                 summary="Modification pre-edit snapshot",
             )
+            pre_edit_version_id = pre_edit_version.id
             db.commit()
         if LLMClient().mode == "real":
             before_files = {
@@ -203,7 +227,12 @@ async def run_modification_task(modification_id: int) -> None:
             })
             changed_files = agent_result.get("changed_files") or []
             if not changed_files:
-                raise ValueError("修改 Agent 未写入任何文件")
+                detail = str(agent_result.get("summary") or "").strip()
+                raise ModificationClarification(
+                    detail if detail and detail != "修改完成"
+                    else "我还无法确认应该修改哪个组件或文件。请补充目标位置、期望交互，或在预览中点选具体元素。"
+                )
+            _validate_interactive_control(workspace, changed_files, instruction)
             file_diffs = _diff_files(workspace, before_files, changed_files)
             summary = str(agent_result.get("summary") or "真实 Agent 修改完成")
         else:
@@ -265,7 +294,22 @@ async def run_modification_task(modification_id: int) -> None:
                 modification.finished_at = datetime.now()
                 db.commit()
         await _publish(session_id, modification_id, {"type": "cancelled"})
+    except ModificationClarification as exc:
+        with SessionLocal() as db:
+            modification = db.get(Modification, modification_id)
+            if modification is not None:
+                modification.status = "needs_clarification"
+                modification.finished_at = datetime.now()
+                db.commit()
+        await _publish(session_id, modification_id, {"type": "clarification", "question": str(exc)})
     except Exception as exc:  # noqa: BLE001
+        if pre_edit_version_id is not None and project_id:
+            with SessionLocal() as db:
+                try:
+                    rollback_project(db, project_id, get_version(db, project_id, pre_edit_version_id))
+                except Exception:
+                    # Preserve the original task error if rollback itself cannot finish.
+                    pass
         with SessionLocal() as db:
             modification = db.get(Modification, modification_id)
             if modification is not None:

@@ -66,6 +66,7 @@ class Settings(BaseSettings):
     # 首页项目截图（无头浏览器）
     backend_url: str = "http://127.0.0.1:8000"
     screenshot_timeout_seconds: int = 45
+    screenshot_virtual_time_budget_ms: int = 3000
 
     @property
     def database_url_default(self) -> str:

@@ -8,6 +8,17 @@ class GenerationCreate(BaseModel):
     session_id: int | None = None
 
 
+class StackAdviceIn(BaseModel):
+    requirement: str = Field(min_length=1, max_length=8000)
+
+
+class StackAdviceOut(BaseModel):
+    selected_stack: str
+    recommended_stack: str
+    needs_confirmation: bool
+    reason: str
+
+
 class GenerationMessageIn(BaseModel):
     message: str = Field(min_length=1, max_length=8000)
 

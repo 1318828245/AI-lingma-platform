@@ -61,6 +61,33 @@ def test_generation_html_end_to_end(client, admin_headers):
     assert "assistant" in roles
 
 
+def test_stack_advice_requires_confirmation_when_html_is_not_suitable(client, admin_headers):
+    project = _create_project(client, admin_headers, "技术栈确认", tech_stack="html")
+    response = client.post(
+        f"/api/projects/{project['id']}/stack-advice",
+        headers=admin_headers,
+        json={"requirement": "做一个带登录、路由和筛选列表的后台管理仪表盘"},
+    )
+    assert response.status_code == 200
+    advice = response.json()
+    assert advice["selected_stack"] == "html"
+    assert advice["recommended_stack"] == "vue3"
+    assert advice["needs_confirmation"] is True
+
+
+def test_stack_advice_keeps_html_for_simple_landing_page(client, admin_headers):
+    project = _create_project(client, admin_headers, "静态页面确认", tech_stack="html")
+    response = client.post(
+        f"/api/projects/{project['id']}/stack-advice",
+        headers=admin_headers,
+        json={"requirement": "做一个展示个人介绍和联系方式的单页名片"},
+    )
+    assert response.status_code == 200
+    advice = response.json()
+    assert advice["recommended_stack"] == "html"
+    assert advice["needs_confirmation"] is False
+
+
 def test_active_generation_is_scoped_to_its_project(client, admin_headers):
     from app.core.database import SessionLocal
     from app.models.generation import Generation
