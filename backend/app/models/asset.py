@@ -14,6 +14,7 @@ class AssetJob(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), index=True, nullable=False)
     generation_id: Mapped[int | None] = mapped_column(ForeignKey("generations.id"), index=True)
+    modification_id: Mapped[int | None] = mapped_column(ForeignKey("modifications.id"), index=True)
     session_id: Mapped[int | None] = mapped_column(ForeignKey("sessions.id"), index=True)
     status: Mapped[str] = mapped_column(String(24), default="pending", nullable=False)
     request_json: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)

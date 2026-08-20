@@ -1,4 +1,5 @@
 import asyncio
+from types import SimpleNamespace
 
 from app.agents.tooling.contracts import ToolCall
 from app.agents.tooling.policy import validate_tool_call
@@ -78,6 +79,24 @@ def test_asset_collection_degrades_without_a_configured_source(client, admin_hea
     assert result["selected"] is None
 
 
+def test_asset_collection_records_the_modification_that_requested_it(client, admin_headers, monkeypatch):
+    project = _create_project(client, admin_headers, "修改素材")
+
+    async def fake_icons(query, limit):
+        return []
+
+    monkeypatch.setattr(assets, "_iconify_candidates", fake_icons)
+    asyncio.run(
+        assets.collect_assets(
+            project_id=project["id"], generation_id=None, modification_id=42,
+            session_id=None, kind="icon", query="calendar",
+        )
+    )
+    with SessionLocal() as db:
+        job = db.query(AssetJob).filter(AssetJob.project_id == project["id"]).one()
+        assert job.modification_id == 42
+
+
 def test_asset_collection_returns_source_error_instead_of_claiming_no_result(client, admin_headers, monkeypatch):
     project = _create_project(client, admin_headers, "素材来源错误")
 
@@ -97,9 +116,57 @@ def test_asset_collection_returns_source_error_instead_of_claiming_no_result(cli
     assert "素材来源暂不可用" in events[-1]["message"]
 
 
-def test_asset_tool_is_generation_only_and_validates_arguments():
+def test_pexels_uses_chinese_locale_for_chinese_semantic_queries(monkeypatch):
+    seen = {}
+
+    def fake_request(url, headers=None):
+        seen["url"] = url
+        seen["headers"] = headers
+        return {"photos": []}
+
+    monkeypatch.setattr(assets, "get_settings", lambda: SimpleNamespace(
+        asset_pexels_api_key="pexels-key",
+        asset_pexels_api_url="https://api.pexels.com/v1",
+    ))
+    monkeypatch.setattr(assets, "_request_json", fake_request)
+    assert asyncio.run(assets._pexels_candidates("商务办公", "landscape", 4)) == []
+    assert "locale=zh-CN" in seen["url"]
+    assert seen["headers"] == {"Authorization": "pexels-key"}
+
+
+def test_pixabay_supports_illustrations_and_keeps_attribution(monkeypatch):
+    seen = {}
+
+    def fake_request(url, headers=None):
+        seen["url"] = url
+        return {
+            "hits": [
+                {
+                    "type": "illustration",
+                    "tags": "abstract dashboard",
+                    "pageURL": "https://pixabay.com/illustrations/example/",
+                    "largeImageURL": "https://cdn.pixabay.com/example.png",
+                    "user": "artist",
+                    "imageWidth": 1600,
+                    "imageHeight": 900,
+                }
+            ]
+        }
+
+    monkeypatch.setattr(assets, "get_settings", lambda: SimpleNamespace(
+        asset_pixabay_api_key="pixabay-key",
+        asset_pixabay_api_url="https://pixabay.com/api/",
+    ))
+    monkeypatch.setattr(assets, "_request_json", fake_request)
+    candidates = asyncio.run(assets._pixabay_candidates("仪表盘", "illustration", "landscape", 4))
+    assert "lang=zh" in seen["url"]
+    assert candidates[0].kind == "illustration"
+    assert candidates[0].attribution == "Image by artist on Pixabay"
+
+
+def test_asset_tool_is_available_to_generation_and_modification_agents():
     valid = ToolCall("asset-1", "collect_assets", {"kind": "icon", "query": "calendar"})
     assert validate_tool_call("generation", valid) is None
-    assert validate_tool_call("modification", valid)
+    assert validate_tool_call("modification", valid) is None
     assert validate_tool_call("generation", ToolCall("asset-2", "collect_assets", {"kind": "url", "query": "x"}))
     assert validate_tool_call("generation", ToolCall("asset-3", "collect_assets", {"kind": "icon", "query": " "}))

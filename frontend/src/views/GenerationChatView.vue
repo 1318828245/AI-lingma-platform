@@ -1048,6 +1048,14 @@ function watchModification(modificationId: number) {
     const data = parse(event); const path = String(data.path || "");
     push({ kind: "file", detail: path, collapsed: true });
   });
+  modificationEventSource.addEventListener("asset_collection_started", (event) => {
+    const data = parse(event);
+    push({ kind: "info", content: `正在检索素材：${String(data.query || "")}`, collapsed: false });
+  });
+  modificationEventSource.addEventListener("asset_collection_completed", (event) => {
+    const data = parse(event);
+    push({ kind: "info", content: `素材编排：${String(data.message || "任务完成")}`, collapsed: false });
+  });
   modificationEventSource.addEventListener("diff", (event) => {
     const files = (parse(event).files || []) as Array<{ path?: string; diff?: string }>;
     push({ kind: "diff", detail: files.map((file) => file.path).filter(Boolean).join(", "), content: files.map((file) => file.diff || "").join("\n"), collapsed: true });

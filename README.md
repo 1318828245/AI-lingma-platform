@@ -24,7 +24,7 @@
 - `agents/tooling/`：集中维护工具 schema、调用/结果契约、Agent 权限策略、执行器和安全展示摘要。
 - `prompts/`：所有 Agent 与模型辅助步骤的独立 Markdown 提示词；目录内 `README.md` 标明调用方和可注入变量，业务代码通过 `app.prompts` 加载。
 - 生成 Agent 可调用文件与构建工具；修改 Agent 不允许运行命令。所有工具调用均先经参数、敏感路径与写入大小校验，再进入副作用执行。
-- 生成 Agent 还可调用 `collect_assets`：仅能通过白名单来源检索图标或图片。Iconify/Lucide 图标会经 SVG 安全校验后写入项目 `assets/`；配置 Pexels Key 后可使用带来源和署名的图片外链，素材清单可由项目资产 API 查询。
+- 生成和修改 Agent 都可调用 `collect_assets`：仅能通过白名单来源检索图标或图片。修改 Agent 仅在用户要求新增或替换视觉素材时调用，并将任务关联到本次修改；Iconify/Lucide 图标会经 SVG 安全校验后写入项目 `assets/`。照片会按 Pexels、Pixabay、Unsplash 的顺序自动降级检索，插画/矢量由 Pixabay 提供；每个来源都保留外链与署名，素材清单可由项目资产 API 查询。
 
 ### 技术栈确认
 

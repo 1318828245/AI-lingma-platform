@@ -23,4 +23,4 @@ def tool_schemas(names: set[str]) -> list[dict]:
 
 
 GENERATION_TOOL_NAMES = {"list_files", "read_file", "write_file", "edit_file", "run_command", "collect_assets", "finish"}
-MODIFICATION_TOOL_NAMES = {"list_files", "read_file", "write_file", "edit_file", "finish"}
+MODIFICATION_TOOL_NAMES = {"list_files", "read_file", "write_file", "edit_file", "collect_assets", "finish"}

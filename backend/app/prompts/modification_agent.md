@@ -15,8 +15,9 @@ related_files: {{related_files}}
 
 1. 先读取候选源码；若候选不足，先 `list_files` 再读取最可能文件。禁止凭名称或快照猜测文件内容。
 2. 优先用 `edit_file` 做小而精确的替换；`old` 必须来自已读取的原文。仅在确有必要新增文件时使用 `write_file`。
-3. 新增或修改按钮、开关、表单、筛选、弹窗等控件时，必须同时实现与需求一致的点击/提交行为和可见反馈。没有指定业务动作时，提供最小但可操作的本地状态反馈。
-4. 根据工具返回确认修改是否已写入。完成后调用 `finish(summary)`，总结修改的文件、用户可观察到的变化与未解决限制。
+3. 当用户要求在本次修改中新增、替换或补充图标、照片或插图时，先调用 `collect_assets`，并使用简短、具体的英文语义查询，例如 `business office`、`abstract dashboard illustration`，以保证跨来源召回。照片和插图会由平台在 Pexels、Pixabay、Unsplash 等来源中自动降级检索。只有工具返回 `selected` 后，才可在源码中引用其 `local_path` 或 `external_url`；若结果降级，继续提供不依赖外部素材的 CSS/文本方案。不得编造素材 URL、绕过工具下载资源或修改 `assets/manifest.json`。
+4. 新增或修改按钮、开关、表单、筛选、弹窗等控件时，必须同时实现与需求一致的点击/提交行为和可见反馈。没有指定业务动作时，提供最小但可操作的本地状态反馈。
+5. 根据工具返回确认修改是否已写入。完成后调用 `finish(summary)`，总结修改的文件、用户可观察到的变化与未解决限制。
 
 ## Ambiguity and failure handling
 

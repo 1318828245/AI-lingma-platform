@@ -65,6 +65,10 @@ class Settings(BaseSettings):
     asset_iconify_api_url: str = "https://api.iconify.design"
     asset_pexels_api_key: str = ""
     asset_pexels_api_url: str = "https://api.pexels.com/v1"
+    asset_pixabay_api_key: str = ""
+    asset_pixabay_api_url: str = "https://pixabay.com/api/"
+    asset_unsplash_access_key: str = ""
+    asset_unsplash_api_url: str = "https://api.unsplash.com"
 
     # 命令执行模式：shell=本机终端语义（无沙箱，本地开发默认）；
     # sandbox=白名单受限执行（生产/受限环境）

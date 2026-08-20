@@ -151,7 +151,10 @@ async def _pexels_candidates(query: str, orientation: str, limit: int) -> list[A
     settings = get_settings()
     if not settings.asset_pexels_api_key:
         return []
-    params = f"query={quote(query)}&per_page={limit}&orientation={quote(orientation or 'landscape')}"
+    # Pexels supports zh-CN explicitly. Passing it for Chinese prompts avoids
+    # treating a valid Chinese semantic request as an English-only lookup.
+    locale = "&locale=zh-CN" if re.search(r"[\u3400-\u9fff]", query) else ""
+    params = f"query={quote(query)}&per_page={limit}&orientation={quote(orientation or 'landscape')}{locale}"
     payload = await asyncio.to_thread(
         _request_json,
         f"{settings.asset_pexels_api_url.rstrip('/')}/search?{params}",
@@ -179,6 +182,97 @@ async def _pexels_candidates(query: str, orientation: str, limit: int) -> list[A
             )
         )
     return result
+
+
+async def _pixabay_candidates(query: str, kind: str, orientation: str, limit: int) -> list[AssetCandidate]:
+    settings = get_settings()
+    if not settings.asset_pixabay_api_key:
+        return []
+    orientation_value = {"landscape": "horizontal", "portrait": "vertical", "square": "all"}.get(orientation, "all")
+    params = (
+        f"key={quote(settings.asset_pixabay_api_key)}&q={quote(query)}"
+        f"&lang=zh&image_type=all&orientation={orientation_value}&per_page={limit}"
+    )
+    payload = await asyncio.to_thread(
+        _request_json,
+        f"{settings.asset_pixabay_api_url.rstrip('/')}?{params}",
+    )
+    result: list[AssetCandidate] = []
+    for image in payload.get("hits", [])[:limit]:
+        image_type = str(image.get("type") or "")
+        if kind == "photo" and image_type != "photo":
+            continue
+        if kind == "illustration" and image_type not in {"illustration", "vector"}:
+            continue
+        external = str(image.get("largeImageURL") or image.get("webformatURL") or "")
+        page = str(image.get("pageURL") or "")
+        if not external or not page:
+            continue
+        author = str(image.get("user") or "Pixabay contributor")
+        result.append(
+            AssetCandidate(
+                source="pixabay",
+                kind="photo" if image_type == "photo" else "illustration",
+                title=str(image.get("tags") or query),
+                source_url=page,
+                license_name="Pixabay Content License",
+                attribution=f"Image by {author} on Pixabay",
+                external_url=external,
+                width=int(image["imageWidth"]) if image.get("imageWidth") else None,
+                height=int(image["imageHeight"]) if image.get("imageHeight") else None,
+            )
+        )
+    return result
+
+
+async def _unsplash_candidates(query: str, orientation: str, limit: int) -> list[AssetCandidate]:
+    settings = get_settings()
+    if not settings.asset_unsplash_access_key:
+        return []
+    params = f"query={quote(query)}&per_page={limit}&orientation={quote('squarish' if orientation == 'square' else orientation or 'landscape')}&content_filter=high"
+    payload = await asyncio.to_thread(
+        _request_json,
+        f"{settings.asset_unsplash_api_url.rstrip('/')}/search/photos?{params}",
+        {"Authorization": f"Client-ID {settings.asset_unsplash_access_key}", "Accept-Version": "v1"},
+    )
+    result: list[AssetCandidate] = []
+    for photo in payload.get("results", [])[:limit]:
+        urls = photo.get("urls") or {}
+        links = photo.get("links") or {}
+        user = photo.get("user") or {}
+        external = str(urls.get("regular") or urls.get("small") or "")
+        page = str(links.get("html") or "")
+        download_tracking_url = str(links.get("download_location") or "")
+        if not external or not page or not download_tracking_url:
+            continue
+        author = str(user.get("name") or "Unsplash contributor")
+        result.append(
+            AssetCandidate(
+                source="unsplash",
+                kind="photo",
+                title=str(photo.get("alt_description") or photo.get("description") or query),
+                source_url=page,
+                license_name="Unsplash License",
+                attribution=f"Photo by {author} on Unsplash",
+                external_url=external,
+                download_url=download_tracking_url,
+                width=int(photo["width"]) if photo.get("width") else None,
+                height=int(photo["height"]) if photo.get("height") else None,
+            )
+        )
+    return result
+
+
+async def _record_unsplash_download(candidate: AssetCandidate) -> None:
+    """Notify Unsplash only for the candidate actually added to a project."""
+    if not candidate.download_url:
+        return
+    settings = get_settings()
+    await asyncio.to_thread(
+        _request_json,
+        candidate.download_url,
+        {"Authorization": f"Client-ID {settings.asset_unsplash_access_key}", "Accept-Version": "v1"},
+    )
 
 
 async def _emit(callback: AssetEvent | None, event: dict) -> None:
@@ -265,7 +359,8 @@ async def collect_assets(
     *,
     project_id: int,
     generation_id: int | None,
-    session_id: int | None,
+    modification_id: int | None = None,
+    session_id: int | None = None,
     kind: str,
     query: str,
     usage_role: str = "decorative",
@@ -288,10 +383,19 @@ async def collect_assets(
     settings = get_settings()
     source_configured = (
         (kind == "icon" and settings.asset_iconify_enabled)
-        or (kind == "photo" and bool(settings.asset_pexels_api_key))
+        or (kind == "photo" and bool(settings.asset_pexels_api_key or settings.asset_pixabay_api_key or settings.asset_unsplash_access_key))
+        or (kind == "illustration" and bool(settings.asset_pixabay_api_key))
     )
     with SessionLocal() as db:
-        job = AssetJob(project_id=project_id, generation_id=generation_id, session_id=session_id, status="running", request_json=request, started_at=datetime.now())
+        job = AssetJob(
+            project_id=project_id,
+            generation_id=generation_id,
+            modification_id=modification_id,
+            session_id=session_id,
+            status="running",
+            request_json=request,
+            started_at=datetime.now(),
+        )
         db.add(job)
         db.commit()
         db.refresh(job)
@@ -302,7 +406,13 @@ async def collect_assets(
     if kind == "icon":
         tasks.append(("iconify-lucide", _iconify_candidates(cleaned_query, limit)))
     elif kind == "photo":
-        tasks.append(("pexels", _pexels_candidates(cleaned_query, orientation, limit)))
+        tasks.extend([
+            ("pexels", _pexels_candidates(cleaned_query, orientation, limit)),
+            ("pixabay", _pixabay_candidates(cleaned_query, "photo", orientation, limit)),
+            ("unsplash", _unsplash_candidates(cleaned_query, orientation, limit)),
+        ])
+    elif kind == "illustration":
+        tasks.append(("pixabay", _pixabay_candidates(cleaned_query, "illustration", orientation, limit)))
     if not tasks:
         candidates: list[AssetCandidate] = []
         source_errors: list[str] = []
@@ -323,6 +433,8 @@ async def collect_assets(
     materialize_error = ""
     if candidates:
         try:
+            if candidates[0].source == "unsplash":
+                await _record_unsplash_download(candidates[0])
             with SessionLocal() as db:
                 selected = (
                     _materialize_icon(db, project_id, job_id, candidates[0], usage_role)

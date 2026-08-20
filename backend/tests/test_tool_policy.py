@@ -9,6 +9,7 @@ def test_tool_schemas_are_shared_and_agent_specific():
 
     assert "run_command" in generation_names
     assert "run_command" not in modification_names
+    assert "collect_assets" in generation_names & modification_names
     assert "edit_file" in generation_names & modification_names
 
 

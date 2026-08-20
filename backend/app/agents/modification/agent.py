@@ -11,6 +11,7 @@ from app.agents.tooling.presentation import display_args, display_detail, error_
 from app.agents.tools import edit_file, list_files, read_file, write_file
 from app.core.database import SessionLocal
 from app.prompts import render_prompt
+from app.services.chat_log import save_generation_event
 from app.services.events import get_broker
 from app.services.llm import LLMClient
 
@@ -93,6 +94,8 @@ def _safe_output(content: str) -> None:
 
 async def _emit(state: ModificationState, event: dict) -> None:
     await get_broker().publish(state["modification_id"], {**event, "modification_id": state["modification_id"]})
+    if event.get("type") in {"asset_collection_started", "asset_collection_completed"}:
+        save_generation_event(state["session_id"], event)
 
 
 def _system_prompt(state: ModificationState) -> str:
@@ -158,6 +161,9 @@ async def run_modification_agent(state: ModificationState) -> dict:
                     workspace=workspace,
                     output_guard=lambda _path, content: _safe_output(content),
                     on_file_written=on_file_written,
+                    modification_id=state["modification_id"],
+                    session_id=state["session_id"],
+                    on_asset_event=lambda event: _emit(state, event),
                 ),
             )
             await _emit(state, {"type": "tool_call_completed", "tool": call.name, "tool_call_id": call.id, "ok": result.ok, "detail": display_detail(call), "error": error_hint(result)})

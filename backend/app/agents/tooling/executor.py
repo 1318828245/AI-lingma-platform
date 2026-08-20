@@ -21,6 +21,7 @@ class ToolExecutionContext:
     output_guard: Callable[[str, str], None] | None = None
     on_file_written: Callable[[str, str], Awaitable[None]] | None = None
     generation_id: int | None = None
+    modification_id: int | None = None
     session_id: int | None = None
     on_asset_event: Callable[[dict], Awaitable[None]] | None = None
     command_runner: Callable[[list[str] | str, Path, int], Awaitable[tuple[int, str]]] = run_command
@@ -61,6 +62,7 @@ async def execute_tool(call: ToolCall, context: ToolExecutionContext) -> ToolRes
             result = await collect_assets(
                 project_id=context.project_id,
                 generation_id=context.generation_id,
+                modification_id=context.modification_id,
                 session_id=context.session_id,
                 kind=str(args["kind"]),
                 query=str(args["query"]),

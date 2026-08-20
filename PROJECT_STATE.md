@@ -22,8 +22,8 @@
 - [x] 规则护轨、路径防护、工具参数/权限/写入量限制和护轨事件记录。
 - [x] 提示词收敛为 `backend/app/prompts/` 下 6 个 Markdown 文件；Agent 回归场景位于 `backend/evals/`。
 - [x] 前端入口按需注册 Element Plus 必要组件与样式，避免全量组件包影响首屏。
-- [x] 异步素材编排：生成 Agent 可调用 `collect_assets`；`asset_jobs`/`project_assets` 持久化候选与选用素材，SSE/历史展示检索和降级结果。
-- [x] 素材来源策略：Iconify/Lucide 图标经固定来源下载、大小/MIME/主动 SVG 校验后写入 `assets/icons/`；可选 Pexels 图片仅保留来源外链与署名，需配置 API Key。
+- [x] 异步素材编排：生成和修改 Agent 均可调用 `collect_assets`；`asset_jobs`/`project_assets` 持久化候选与选用素材，并关联生成或修改任务，SSE/历史展示检索和降级结果。
+- [x] 素材来源策略：Iconify/Lucide 图标经固定来源下载、大小/MIME/主动 SVG 校验后写入 `assets/icons/`；照片按 Pexels、Pixabay、Unsplash 自动降级检索，插画/矢量由 Pixabay 提供，均仅保留来源外链与署名，需分别配置 API Key。
 - [x] `assets/manifest.json` 纳入项目版本快照，项目资产可通过 `GET /api/projects/{id}/assets` 查询，删除项目时清理记录和文件。
 
 ## 已验证
@@ -40,7 +40,7 @@
 - 预览 iframe 为保障运行仍允许脚本、同源、表单和弹窗；严格 CSP/容器隔离属于 M6。
 - 浏览器人工验收尚需执行，清单见 `docs/BROWSER_ACCEPTANCE.md`。
 - 素材任务当前随生成 Agent 的工具调用完成；独立 worker、取消、跨进程恢复、用户选择/替换 UI、图片转码和缩略图尚未实现。
-- 第一版仅接入 Iconify/Lucide 和可选 Pexels；真实 Pexels 使用前需配置 Key 并完成来源条款与浏览器署名验收。
+- 真实图片来源需分别配置 Pexels、Pixabay 或 Unsplash Key，并完成来源条款与浏览器署名验收；未配置的来源会自动跳过。
 - 来源连接失败会在素材完成事件和 `asset_jobs.error` 中保留具体来源错误，不再统一伪装为“未找到素材”。
 
 ## 下一步
