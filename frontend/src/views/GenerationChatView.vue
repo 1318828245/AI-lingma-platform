@@ -294,7 +294,13 @@
         <span class="splitter-grip" />
       </div>
       <main class="preview-pane">
-        <LivePreviewPanel
+        <nav class="workspace-mode-switch" aria-label="工作区模式">
+          <button type="button" :class="{ active: workspaceMode === 'preview' }" @click="switchWorkspaceMode('preview')"><span>◫</span> 实时预览</button>
+          <button type="button" :class="{ active: workspaceMode === 'deployment' }" @click="switchWorkspaceMode('deployment')"><span>↗</span> 发布中心</button>
+        </nav>
+        <Transition name="workspace-page" mode="out-in">
+        <section v-if="workspaceMode === 'preview'" key="preview" class="preview-workspace">
+          <LivePreviewPanel
           :project-id="projectId"
           :stage="activeTaskStage"
           :running="taskActive"
@@ -308,9 +314,6 @@
           <template #actions>
             <button class="quality-entry" :class="{ active: qualityPanelOpen }" type="button" title="查看本次交付的质量检查" :aria-expanded="qualityPanelOpen" @click="toggleQualityPanel">
               <span aria-hidden="true">✓</span> 质量
-            </button>
-            <button class="deploy-entry" :class="{ active: deploymentPanelOpen }" type="button" title="发布构建后的项目并管理访问链接" :aria-expanded="deploymentPanelOpen" @click="toggleDeploymentPanel">
-              <span aria-hidden="true">↗</span> 发布
             </button>
             <button class="asset-entry"
               :class="{ active: assetPanelOpen }"
@@ -344,7 +347,7 @@
               />
             </div>
           </template>
-        </LivePreviewPanel>
+          </LivePreviewPanel>
         <Transition name="workspace-drawer" mode="out-in">
           <AssetPanel
             v-if="assetPanelOpen"
@@ -364,12 +367,6 @@
             @improve="startEvaluationImprovement"
             @refresh="refreshQualityEvaluation"
           />
-          <DeploymentPanel
-            v-else-if="deploymentPanelOpen"
-            key="deployments"
-            :project-id="projectId"
-            @close="deploymentPanelOpen = false"
-          />
         </Transition>
         <button
           class="version-fab"
@@ -388,6 +385,9 @@
           :refresh-token="previewRefresh"
           @rollback="onModificationCompleted"
         />
+        </section>
+        <DeploymentPanel v-else key="deployment" class="deployment-workspace" :project-id="projectId" />
+        </Transition>
       </main>
     </div>
   </div>
@@ -520,7 +520,7 @@ const taskWaitingText = computed(() => {
 const versionsOpen = ref(false);
 const assetPanelOpen = ref(false);
 const qualityPanelOpen = ref(false);
-const deploymentPanelOpen = ref(false);
+const workspaceMode = ref<"preview" | "deployment">("preview");
 const qualityEvaluation = ref<QualityEvaluation | null>(null);
 const qualityRefreshing = ref(false);
 const improvementBaselineScore = ref<number | null>(null);
@@ -590,22 +590,23 @@ function onModificationCompleted() {
 function toggleAssetPanel() {
   const opening = !assetPanelOpen.value;
   qualityPanelOpen.value = false;
-  deploymentPanelOpen.value = false;
   assetPanelOpen.value = opening;
 }
 
 function toggleQualityPanel() {
   const opening = !qualityPanelOpen.value;
   assetPanelOpen.value = false;
-  deploymentPanelOpen.value = false;
   qualityPanelOpen.value = opening;
 }
 
-function toggleDeploymentPanel() {
-  const opening = !deploymentPanelOpen.value;
-  assetPanelOpen.value = false;
-  qualityPanelOpen.value = false;
-  deploymentPanelOpen.value = opening;
+function switchWorkspaceMode(mode: "preview" | "deployment") {
+  if (mode === "deployment") {
+    assetPanelOpen.value = false;
+    qualityPanelOpen.value = false;
+    versionsOpen.value = false;
+    selectedElement.value = null;
+  }
+  workspaceMode.value = mode;
 }
 
 function startResize(event: PointerEvent) {
@@ -2062,10 +2063,17 @@ async function renameProject() {
 }
 .preview-pane {
   position: relative;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   min-height: 0;
   padding: 16px 16px 16px 10px;
 }
+.workspace-mode-switch { display:inline-flex; align-self:flex-start; gap:3px; margin:0 0 9px 2px; padding:3px; border:1px solid #dde3f4; border-radius:10px; background:#f6f8fd; }
+.workspace-mode-switch button { border:0; border-radius:7px; padding:7px 10px; background:transparent; color:#74809f; font-size:12px; font-weight:700; cursor:pointer; transition:.16s ease; }
+.workspace-mode-switch button span { margin-right:4px; color:#8995bb; } .workspace-mode-switch button:hover { color:#4657b7; } .workspace-mode-switch button.active { background:#fff; color:#3447ac; box-shadow:0 2px 7px rgba(53,70,142,.14); } .workspace-mode-switch button.active span { color:#5264d8; }
+.preview-workspace,.deployment-workspace { position:relative; flex:1; min-height:0; }
+.workspace-page-enter-active { transition:opacity .2s ease,transform .2s ease; } .workspace-page-leave-active { transition:opacity .13s ease,transform .13s ease; } .workspace-page-enter-from { opacity:0; transform:translateY(7px); } .workspace-page-leave-to { opacity:0; transform:translateY(-4px); }
 .asset-drawer { position: absolute; top: 66px; right: 18px; z-index: 12; }
 .quality-drawer { position: absolute; top: 66px; right: 18px; z-index: 12; }
 .workspace-drawer-enter-active { transition: opacity 0.2s ease-out, transform 0.2s cubic-bezier(.2,.8,.2,1); }
@@ -2076,9 +2084,6 @@ async function renameProject() {
 .quality-entry span { display:grid; place-items:center; width:17px; height:17px; border-radius:50%; background:var(--green-soft); color:var(--green); font-weight:700; }
 .quality-entry:hover,.quality-entry.active { color:var(--primary-dark); border-color:rgba(82,100,216,.5); background:var(--primary-soft); }
 .quality-entry.active { box-shadow:0 0 0 3px rgba(82,100,216,.1); }
-.deploy-entry { display:inline-flex; align-items:center; gap:5px; min-height:32px; padding:5px 9px; border:1px solid #b7c5f8; border-radius:10px; background:linear-gradient(135deg,#f5f7ff,#eaf0ff); color:#3445aa; font-size:12px; font-weight:700; cursor:pointer; transition:.15s ease; }
-.deploy-entry span { display:grid; place-items:center; width:17px; height:17px; border-radius:6px; background:#5264d8; color:#fff; font-size:13px; }
-.deploy-entry:hover,.deploy-entry.active { border-color:#5264d8; box-shadow:0 0 0 3px rgba(82,100,216,.12); transform:translateY(-1px); }
 .asset-entry {
   display: inline-flex;
   align-items: center;

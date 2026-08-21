@@ -77,6 +77,10 @@ After a successful generation or modification, the platform commits the delivery
 
 The user opens the publishing center from the project workbench and publishes the latest successful version snapshot. The server copies a Vue/Vite snapshot's `dist/` delivery, or an HTML/multifile snapshot's static root delivery, into an isolated `storage/publish/{deployment-slug}/` directory, then exposes it at an absolute public URL. Every attempt is recorded with its version number, status, URL, and a readable failure reason; the editable workspace never becomes public.
 
+## M4-2 online version management
+
+Each project has a stable `/sites/{project-slug}/` address which resolves only to its active deployment. Publishing a new delivery makes it active; a successful historical deployment can be selected to restore that version without rebuilding. Taking the active deployment offline removes both its immutable published URL and the stable project address from public access, while retaining its record for a later restore.
+
 ## 关键规则
 
 - 生成任务和修改任务都可使用受控素材收集；图片来源失败时会降级，不阻断项目交付。

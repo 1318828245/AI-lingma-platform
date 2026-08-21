@@ -39,3 +39,6 @@ def init_db() -> None:
         if "error" not in columns:
             with engine.begin() as connection:
                 connection.exec_driver_sql("ALTER TABLE deployments ADD COLUMN error VARCHAR(2000)")
+        if "is_active" not in columns:
+            with engine.begin() as connection:
+                connection.exec_driver_sql("ALTER TABLE deployments ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 0")

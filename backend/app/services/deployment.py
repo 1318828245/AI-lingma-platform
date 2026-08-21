@@ -31,6 +31,38 @@ def list_deployments(db: Session, project_id: int) -> list[Deployment]:
     )
 
 
+def get_deployment(db: Session, project_id: int, deployment_id: int) -> Deployment:
+    deployment = db.get(Deployment, deployment_id)
+    if deployment is None or deployment.project_id != project_id:
+        raise HTTPException(status_code=404, detail="发布记录不存在")
+    return deployment
+
+
+def activate_deployment(db: Session, project: Project, deployment_id: int) -> Deployment:
+    deployment = get_deployment(db, project.id, deployment_id)
+    if deployment.status not in {"ready", "offline"}:
+        raise HTTPException(status_code=400, detail="只有成功或已下线的版本可以上线")
+    db.query(Deployment).filter(Deployment.project_id == project.id).update({"is_active": False})
+    deployment.status = "ready"
+    deployment.is_active = True
+    db.commit()
+    db.refresh(deployment)
+    return deployment
+
+
+def offline_deployment(db: Session, project: Project, deployment_id: int) -> Deployment:
+    deployment = get_deployment(db, project.id, deployment_id)
+    if deployment.status == "offline":
+        return deployment
+    if deployment.status != "ready":
+        raise HTTPException(status_code=400, detail="该发布记录不能下线")
+    deployment.status = "offline"
+    deployment.is_active = False
+    db.commit()
+    db.refresh(deployment)
+    return deployment
+
+
 def _selected_version(db: Session, project_id: int, version_id: int | None) -> ProjectVersion:
     if version_id is not None:
         return get_version(db, project_id, version_id)
@@ -103,6 +135,8 @@ def create_deployment(
             raise ValueError("发布地址已存在，请重新发布")
         staging.replace(destination)
         deployment.status = "ready"
+        db.query(Deployment).filter(Deployment.project_id == project.id).update({"is_active": False})
+        deployment.is_active = True
         deployment.url = f"{get_settings().backend_url.rstrip('/')}/published/{deployment.slug}/"
         deployment.error = None
     except Exception as exc:

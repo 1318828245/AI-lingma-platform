@@ -17,5 +17,7 @@ class DeploymentOut(BaseModel):
     url: str | None
     slug: str
     error: str | None
+    is_active: bool
+    site_url: str | None = None
     created_at: datetime
     updated_at: datetime
