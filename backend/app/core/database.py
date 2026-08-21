@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from app.core.config import get_settings
@@ -32,3 +32,10 @@ def init_db() -> None:
     from app import models  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    # Local development uses create_all instead of Alembic. Keep an existing
+    # SQLite workspace forward-compatible with small additive migrations.
+    if engine.dialect.name == "sqlite":
+        columns = {column["name"] for column in inspect(engine).get_columns("deployments")}
+        if "error" not in columns:
+            with engine.begin() as connection:
+                connection.exec_driver_sql("ALTER TABLE deployments ADD COLUMN error VARCHAR(2000)")

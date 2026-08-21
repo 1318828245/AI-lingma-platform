@@ -71,7 +71,11 @@ flowchart TD
 
 ## M3 quality loop
 
-After a successful generation or modification, the platform writes an auditable five-dimension evaluation: build availability, project structure, requirement coverage, safety guardrails, and asset completeness. The project workbench exposes the latest score and repair recommendations; selecting a recommendation places a concrete repair prompt into the conversation input.
+After a successful generation or modification, the platform commits the delivery, then runs an auditable four-dimension evaluation: executability, project structure, user intent and experience, and safety. The intent dimension uses a separate Qwen vision provider with a preview screenshot; source safety findings retain file and line evidence. The project workbench exposes the latest 20-point score, re-check action, and repair recommendations. For a low score, a recommendation becomes a controlled modification task only after the user confirms it; when that task finishes, the workbench automatically shows the fresh evaluation and the score change from the version the user approved.
+
+## M4-1 deployment loop
+
+The user opens the publishing center from the project workbench and publishes the latest successful version snapshot. The server copies a Vue/Vite snapshot's `dist/` delivery, or an HTML/multifile snapshot's static root delivery, into an isolated `storage/publish/{deployment-slug}/` directory, then exposes it at an absolute public URL. Every attempt is recorded with its version number, status, URL, and a readable failure reason; the editable workspace never becomes public.
 
 ## 关键规则
 

@@ -309,8 +309,10 @@
             <button class="quality-entry" :class="{ active: qualityPanelOpen }" type="button" title="查看本次交付的质量检查" :aria-expanded="qualityPanelOpen" @click="toggleQualityPanel">
               <span aria-hidden="true">✓</span> 质量
             </button>
-            <button
-              class="asset-entry"
+            <button class="deploy-entry" :class="{ active: deploymentPanelOpen }" type="button" title="发布构建后的项目并管理访问链接" :aria-expanded="deploymentPanelOpen" @click="toggleDeploymentPanel">
+              <span aria-hidden="true">↗</span> 发布
+            </button>
+            <button class="asset-entry"
               :class="{ active: assetPanelOpen }"
               type="button"
               title="查看素材检索任务与候选素材"
@@ -359,8 +361,14 @@
             :evaluation="qualityEvaluation"
             :refreshing="qualityRefreshing"
             @close="qualityPanelOpen = false"
-            @repair="fillRepairInstruction"
+            @improve="startEvaluationImprovement"
             @refresh="refreshQualityEvaluation"
+          />
+          <DeploymentPanel
+            v-else-if="deploymentPanelOpen"
+            key="deployments"
+            :project-id="projectId"
+            @close="deploymentPanelOpen = false"
           />
         </Transition>
         <button
@@ -392,6 +400,7 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import LivePreviewPanel from "../components/LivePreviewPanel.vue";
 import AssetPanel from "../components/AssetPanel.vue";
 import QualityPanel from "../components/QualityPanel.vue";
+import DeploymentPanel from "../components/DeploymentPanel.vue";
 import ModifyPanel from "../components/ModifyPanel.vue";
 import VersionHistory from "../components/VersionHistory.vue";
 import MarkdownView from "../components/MarkdownView.vue";
@@ -511,8 +520,10 @@ const taskWaitingText = computed(() => {
 const versionsOpen = ref(false);
 const assetPanelOpen = ref(false);
 const qualityPanelOpen = ref(false);
+const deploymentPanelOpen = ref(false);
 const qualityEvaluation = ref<QualityEvaluation | null>(null);
 const qualityRefreshing = ref(false);
+const improvementBaselineScore = ref<number | null>(null);
 const streamTick = ref(0);
 const chatListRef = ref<HTMLElement | null>(null);
 const splitRef = ref<HTMLElement | null>(null);
@@ -565,18 +576,36 @@ function onPickerToggled(enabled: boolean) {
 
 function onModificationCompleted() {
   previewRefresh.value += 1;
+  if (improvementBaselineScore.value !== null && qualityEvaluation.value) {
+    const delta = Math.round(qualityEvaluation.value.score - improvementBaselineScore.value);
+    if (delta > 0) {
+      ElMessage.success(`改进后评分提升 ${delta} 分（当前 ${qualityEvaluation.value.score}/20）`);
+    } else {
+      ElMessage.info(`改进后评分为 ${qualityEvaluation.value.score}/20`);
+    }
+    improvementBaselineScore.value = null;
+  }
 }
 
 function toggleAssetPanel() {
   const opening = !assetPanelOpen.value;
   qualityPanelOpen.value = false;
+  deploymentPanelOpen.value = false;
   assetPanelOpen.value = opening;
 }
 
 function toggleQualityPanel() {
   const opening = !qualityPanelOpen.value;
   assetPanelOpen.value = false;
+  deploymentPanelOpen.value = false;
   qualityPanelOpen.value = opening;
+}
+
+function toggleDeploymentPanel() {
+  const opening = !deploymentPanelOpen.value;
+  assetPanelOpen.value = false;
+  qualityPanelOpen.value = false;
+  deploymentPanelOpen.value = opening;
 }
 
 function startResize(event: PointerEvent) {
@@ -796,10 +825,20 @@ onMounted(async () => {
   }
 });
 
-function fillRepairInstruction(recommendation: string) {
-  requirement.value = `请检查当前项目并执行这项质量修复：${recommendation}`;
-  qualityPanelOpen.value = false;
-  ElMessage.info("已填入修复指令，可确认后发送");
+async function startEvaluationImprovement(recommendation: string) {
+  const instruction = `请基于当前项目执行已确认的交付质量改进：${recommendation}\n仅修改与该建议直接相关的文件；完成后重新构建并确保预览可用。`;
+  try {
+    await ElMessageBox.confirm(
+      `将创建一次受控修改任务：\n${recommendation}\n\n系统会在修改完成后自动重新评估。`,
+      "确认开始改进",
+      { confirmButtonText: "开始改进", cancelButtonText: "保留当前版本", type: "warning", closeOnClickModal: false }
+    );
+    improvementBaselineScore.value = qualityEvaluation.value?.score ?? null;
+    qualityPanelOpen.value = false;
+    if (!(await submitDirectModification(instruction))) improvementBaselineScore.value = null;
+  } catch (error) {
+    if (error !== "cancel" && error !== "close") ElMessage.error("无法创建改进任务，请稍后重试");
+  }
 }
 
 async function refreshQualityEvaluation() {
@@ -1071,8 +1110,10 @@ async function submitDirectModification(text: string) {
     });
     requirement.value = "";
     onModificationSubmitted(modification, text, false);
+    return true;
   } catch (error: any) {
     ElMessage.error(error.response?.data?.detail || "提交修改失败，请重试");
+    return false;
   } finally {
     submitting.value = false;
   }
@@ -1149,7 +1190,7 @@ function watchModification(modificationId: number) {
     runningModification.value = null; modificationActive.value = false; modificationStage.value = "done"; modificationEventSource?.close(); onModificationCompleted(); void reloadHistory();
   });
   modificationEventSource.addEventListener("task_error", (event) => {
-    const error = String(parse(event).error || "修改失败"); endStreaming(); push({ kind: "error", content: error }); runningModification.value = null; modificationActive.value = false; modificationStage.value = "done"; modificationEventSource?.close();
+    const error = String(parse(event).error || "修改失败"); endStreaming(); push({ kind: "error", content: error }); improvementBaselineScore.value = null; runningModification.value = null; modificationActive.value = false; modificationStage.value = "done"; modificationEventSource?.close();
   });
   modificationEventSource.addEventListener("clarification", (event) => {
     const question = String(parse(event).question || "请补充需要修改的位置或预期效果。");
@@ -2035,6 +2076,9 @@ async function renameProject() {
 .quality-entry span { display:grid; place-items:center; width:17px; height:17px; border-radius:50%; background:var(--green-soft); color:var(--green); font-weight:700; }
 .quality-entry:hover,.quality-entry.active { color:var(--primary-dark); border-color:rgba(82,100,216,.5); background:var(--primary-soft); }
 .quality-entry.active { box-shadow:0 0 0 3px rgba(82,100,216,.1); }
+.deploy-entry { display:inline-flex; align-items:center; gap:5px; min-height:32px; padding:5px 9px; border:1px solid #b7c5f8; border-radius:10px; background:linear-gradient(135deg,#f5f7ff,#eaf0ff); color:#3445aa; font-size:12px; font-weight:700; cursor:pointer; transition:.15s ease; }
+.deploy-entry span { display:grid; place-items:center; width:17px; height:17px; border-radius:6px; background:#5264d8; color:#fff; font-size:13px; }
+.deploy-entry:hover,.deploy-entry.active { border-color:#5264d8; box-shadow:0 0 0 3px rgba(82,100,216,.12); transform:translateY(-1px); }
 .asset-entry {
   display: inline-flex;
   align-items: center;
