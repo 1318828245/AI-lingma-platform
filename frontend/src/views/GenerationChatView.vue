@@ -306,13 +306,16 @@
           @picker-toggled="onPickerToggled"
         >
           <template #actions>
+            <button class="quality-entry" :class="{ active: qualityPanelOpen }" type="button" title="查看本次交付的质量检查" :aria-expanded="qualityPanelOpen" @click="toggleQualityPanel">
+              <span aria-hidden="true">✓</span> 质量
+            </button>
             <button
               class="asset-entry"
               :class="{ active: assetPanelOpen }"
               type="button"
               title="查看素材检索任务与候选素材"
               :aria-expanded="assetPanelOpen"
-              @click="assetPanelOpen = !assetPanelOpen"
+              @click="toggleAssetPanel"
             >
               <span class="asset-entry-mark" aria-hidden="true"><i /><i /><i /><i /></span>
               <span class="asset-entry-copy">
@@ -340,13 +343,26 @@
             </div>
           </template>
         </LivePreviewPanel>
-        <AssetPanel
-          v-if="assetPanelOpen"
-          class="asset-drawer"
-          :project-id="projectId"
-          @asset-updated="onModificationCompleted"
-          @close="assetPanelOpen = false"
-        />
+        <Transition name="workspace-drawer" mode="out-in">
+          <AssetPanel
+            v-if="assetPanelOpen"
+            key="assets"
+            class="asset-drawer"
+            :project-id="projectId"
+            @asset-updated="onModificationCompleted"
+            @close="assetPanelOpen = false"
+          />
+          <QualityPanel
+            v-else-if="qualityPanelOpen"
+            key="quality"
+            class="quality-drawer"
+            :evaluation="qualityEvaluation"
+            :refreshing="qualityRefreshing"
+            @close="qualityPanelOpen = false"
+            @repair="fillRepairInstruction"
+            @refresh="refreshQualityEvaluation"
+          />
+        </Transition>
         <button
           class="version-fab"
           :class="{ active: versionsOpen }"
@@ -375,6 +391,7 @@ import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import LivePreviewPanel from "../components/LivePreviewPanel.vue";
 import AssetPanel from "../components/AssetPanel.vue";
+import QualityPanel from "../components/QualityPanel.vue";
 import ModifyPanel from "../components/ModifyPanel.vue";
 import VersionHistory from "../components/VersionHistory.vue";
 import MarkdownView from "../components/MarkdownView.vue";
@@ -390,10 +407,13 @@ import {
 } from "../api/generations";
 import {
   getProject,
+  getProjectEvaluation,
+  refreshProjectEvaluation,
   listMessages,
   listSessions,
   updateProject,
 } from "../api/projects";
+import type { QualityEvaluation } from "../api/projects";
 import { createModification, getActiveModification, modificationEventUrl } from "../api/modifications";
 import { acceptProjectVersion, undoProjectVersion } from "../api/versions";
 import type {
@@ -490,6 +510,9 @@ const taskWaitingText = computed(() => {
 });
 const versionsOpen = ref(false);
 const assetPanelOpen = ref(false);
+const qualityPanelOpen = ref(false);
+const qualityEvaluation = ref<QualityEvaluation | null>(null);
+const qualityRefreshing = ref(false);
 const streamTick = ref(0);
 const chatListRef = ref<HTMLElement | null>(null);
 const splitRef = ref<HTMLElement | null>(null);
@@ -542,6 +565,18 @@ function onPickerToggled(enabled: boolean) {
 
 function onModificationCompleted() {
   previewRefresh.value += 1;
+}
+
+function toggleAssetPanel() {
+  const opening = !assetPanelOpen.value;
+  qualityPanelOpen.value = false;
+  assetPanelOpen.value = opening;
+}
+
+function toggleQualityPanel() {
+  const opening = !qualityPanelOpen.value;
+  assetPanelOpen.value = false;
+  qualityPanelOpen.value = opening;
 }
 
 function startResize(event: PointerEvent) {
@@ -727,6 +762,7 @@ function toolIcon(tool?: string) {
 
 onMounted(async () => {
   project.value = await getProject(projectId);
+  qualityEvaluation.value = (await getProjectEvaluation(projectId)).evaluation;
   const sessions = await listSessions(projectId);
   const activeGeneration = await getActiveGeneration(projectId);
   const activeModification = await getActiveModification(projectId);
@@ -759,6 +795,23 @@ onMounted(async () => {
     await submitRequirement();
   }
 });
+
+function fillRepairInstruction(recommendation: string) {
+  requirement.value = `请检查当前项目并执行这项质量修复：${recommendation}`;
+  qualityPanelOpen.value = false;
+  ElMessage.info("已填入修复指令，可确认后发送");
+}
+
+async function refreshQualityEvaluation() {
+  qualityRefreshing.value = true;
+  try {
+    qualityEvaluation.value = (await refreshProjectEvaluation(projectId)).evaluation;
+  } catch (error: any) {
+    ElMessage.error(error.response?.data?.detail || "重新检查失败，请稍后再试");
+  } finally {
+    qualityRefreshing.value = false;
+  }
+}
 
 async function reloadHistory() {
   if (!activeSessionId.value) return;
@@ -1089,6 +1142,7 @@ function watchModification(modificationId: number) {
   });
   modificationEventSource.addEventListener("completed", (event) => {
     const data = parse(event); endStreaming();
+    if (data.evaluation) qualityEvaluation.value = data.evaluation as QualityEvaluation;
     const summary = String(data.summary || "修改完成");
     push({ kind: "assistant", content: summary, collapsed: false });
     push({ kind: "modification-result", versionId: Number(data.version_id) || undefined, collapsed: false });
@@ -1277,6 +1331,8 @@ function watchGeneration(genId: number) {
   eventSource.addEventListener("completed", (e) => {
     flushBuffers();
     const event = JSON.parse((e as MessageEvent).data) as SseEvent;
+    const evaluation = (event as SseEvent & { evaluation?: QualityEvaluation }).evaluation;
+    if (evaluation) qualityEvaluation.value = evaluation;
     const summary = String(event.summary || "");
     const streamedAssistant =
       activeAssistantId !== null
@@ -1970,6 +2026,15 @@ async function renameProject() {
   padding: 16px 16px 16px 10px;
 }
 .asset-drawer { position: absolute; top: 66px; right: 18px; z-index: 12; }
+.quality-drawer { position: absolute; top: 66px; right: 18px; z-index: 12; }
+.workspace-drawer-enter-active { transition: opacity 0.2s ease-out, transform 0.2s cubic-bezier(.2,.8,.2,1); }
+.workspace-drawer-leave-active { transition: opacity 0.14s ease-in, transform 0.14s ease-in; }
+.workspace-drawer-enter-from { opacity: 0; transform: translateY(-8px) scale(0.97); }
+.workspace-drawer-leave-to { opacity: 0; transform: translateY(-5px) scale(0.98); }
+.quality-entry { display:inline-flex; align-items:center; gap:5px; min-height:32px; padding:5px 9px; border:1px solid var(--line-strong); border-radius:10px; background:var(--paper); color:var(--muted); font-size:12px; cursor:pointer; transition:.15s ease; }
+.quality-entry span { display:grid; place-items:center; width:17px; height:17px; border-radius:50%; background:var(--green-soft); color:var(--green); font-weight:700; }
+.quality-entry:hover,.quality-entry.active { color:var(--primary-dark); border-color:rgba(82,100,216,.5); background:var(--primary-soft); }
+.quality-entry.active { box-shadow:0 0 0 3px rgba(82,100,216,.1); }
 .asset-entry {
   display: inline-flex;
   align-items: center;

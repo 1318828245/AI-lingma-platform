@@ -10,10 +10,12 @@ from app.agents.tools import edit_file, list_files, read_file, write_file
 from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.models.generation import Generation
+from app.models.evaluation import Evaluation
 from app.models.guardrail import GuardrailEvent
 from app.models.message import Message
 from app.services.chat_log import save_generation_event
 from app.services.events import get_broker
+from app.services.evaluation import apply_visual_evaluation, evaluate_delivery, evaluation_wire
 from app.services.llm import LLMClient
 from app.services.sandbox import validate_build as run_validate_build
 from app.services.version import snapshot_project
@@ -539,6 +541,15 @@ async def summarize(state: GenerationState) -> dict:
                 source_id=gen.id,
                 summary=summary[:500],
             )
+            evaluation = evaluate_delivery(
+                db,
+                project_id=gen.project_id,
+                ref_type="generation",
+                ref_id=gen.id,
+                succeeded=True,
+                requirement=gen.requirement,
+                workspace=Path(state["workspace"]),
+            )
         db.add(
             Message(
                 session_id=state["session_id"],
@@ -548,6 +559,17 @@ async def summarize(state: GenerationState) -> dict:
             )
         )
         db.commit()
+    # Commit the delivery first. The screenshot browser opens /preview through
+    # another request/DB session; doing that while SQLite has this write
+    # transaction open can make the preview endpoint return 500.
+    with SessionLocal() as db:
+        persisted = db.get(Evaluation, evaluation.id)
+        if persisted is not None:
+            evaluation = await apply_visual_evaluation(
+                db, persisted, user_id=state["user_id"], requirement=state["requirement"],
+                workspace=Path(state["workspace"]),
+            )
+            db.commit()
     await publish_event(
         state,
         {
@@ -555,6 +577,7 @@ async def summarize(state: GenerationState) -> dict:
             "generation_id": state["generation_id"],
             "summary": summary,
             "build_attempt": state["build_attempt"],
+            "evaluation": evaluation_wire(evaluation),
         },
     )
     return {"status": "succeeded", "summary": summary}

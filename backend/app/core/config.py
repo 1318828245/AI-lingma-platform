@@ -56,6 +56,14 @@ class Settings(BaseSettings):
     llm_reasoning_effort: str = "high"
     llm_thinking_enabled: bool = True
 
+    # 独立视觉评估模型：与代码生成模型分离，默认不调用外部服务。
+    eval_vision_provider: str = "disabled"  # disabled | qwen_compatible
+    eval_vision_model: str = "qwen3-vl-flash"
+    eval_vision_base_url: str = ""
+    eval_vision_api_key: str = ""
+    eval_vision_timeout_seconds: int = 90
+    eval_vision_thinking_enabled: bool = False
+
     # 生成 Agent（ReAct 工具循环）
     agent_max_iterations: int = 50
 

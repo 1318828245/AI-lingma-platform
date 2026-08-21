@@ -166,7 +166,7 @@ let thumbnailObserver: IntersectionObserver | undefined;
 function thumbSrc(p: Project) {
   return `/api/projects/${p.id}/screenshot?token=${encodeURIComponent(
     auth.accessToken
-  )}&t=${thumbVersions.value[p.id] || 0}${thumbForced.value[p.id] ? "&force=1" : ""}`;
+  )}&project=${encodeURIComponent(p.slug)}&t=${thumbVersions.value[p.id] || 0}${thumbForced.value[p.id] ? "&force=1" : ""}`;
 }
 
 function thumbError(p: Project) {

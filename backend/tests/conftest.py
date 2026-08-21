@@ -13,6 +13,7 @@ os.environ["AI_LINGMA_LLM_MODEL"] = "mock"
 os.environ["AI_LINGMA_LLM_BASE_URL"] = ""
 os.environ["AI_LINGMA_LLM_API_KEY"] = ""
 os.environ["AI_LINGMA_COMMAND_MODE"] = "shell"
+os.environ["AI_LINGMA_EVAL_VISION_PROVIDER"] = "disabled"
 
 import pytest
 from fastapi.testclient import TestClient

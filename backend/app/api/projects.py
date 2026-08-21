@@ -6,12 +6,14 @@ from app.core.deps import get_current_user, get_db
 from app.models.project import Project
 from app.models.file import File
 from app.models.generation import Generation
+from app.models.modification import Modification
 from app.models.template import Template
 from app.models.user import User
 from app.schemas.project import ProjectCreate, ProjectOut, ProjectUpdate
 from app.services.project import create_project, delete_project, get_owned_project, project_workspace
 from app.services.assets import asset_job_wire, list_asset_jobs, list_project_assets, run_asset_job, select_asset_candidate
 from app.models.asset import AssetJob
+from app.services.evaluation import apply_visual_evaluation, evaluate_delivery, evaluation_wire, latest_project_evaluation
 from app.services.task_manager import get_asset_task_manager
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
@@ -68,6 +70,50 @@ def list_assets(
 ):
     get_owned_project(db, project_id, user.id)
     return {"assets": list_project_assets(db, project_id)}
+
+
+@router.get("/{project_id}/evaluation")
+def project_evaluation(
+    project_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    get_owned_project(db, project_id, user.id)
+    row = latest_project_evaluation(db, project_id)
+    return {"evaluation": evaluation_wire(row) if row else None}
+
+
+@router.post("/{project_id}/evaluation/refresh")
+async def refresh_project_evaluation(
+    project_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    project = get_owned_project(db, project_id, user.id)
+    previous = latest_project_evaluation(db, project_id)
+    if previous is None:
+        raise HTTPException(status_code=409, detail="请先完成一次生成或修改后再检查质量")
+    if previous.ref_type == "generation":
+        source = db.get(Generation, previous.ref_id)
+        requirement = source.requirement if source else ""
+        changed_files = None
+    elif previous.ref_type == "modification":
+        source = db.get(Modification, previous.ref_id)
+        requirement = source.instruction if source else ""
+        changed_files = list(source.related_files_json or []) if source else None
+    else:
+        raise HTTPException(status_code=409, detail="该历史记录无法重新评估")
+    if source is None:
+        raise HTTPException(status_code=404, detail="原始交付记录不存在")
+    row = evaluate_delivery(
+        db, project_id=project_id, ref_type=previous.ref_type, ref_id=previous.ref_id,
+        succeeded=True, requirement=requirement, workspace=project_workspace(project), changed_files=changed_files,
+    )
+    row = await apply_visual_evaluation(
+        db, row, user_id=user.id, requirement=requirement, workspace=project_workspace(project),
+    )
+    db.commit()
+    return {"evaluation": evaluation_wire(row)}
 
 
 @router.get("/{project_id}/asset-jobs")

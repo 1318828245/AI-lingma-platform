@@ -60,6 +60,22 @@ export async function getPreviewStatus(id: number): Promise<PreviewStatus> {
   return data;
 }
 
+export interface QualityEvaluation {
+  id: number; score: number; pass: boolean; created_at?: string | null;
+  dimensions: Record<string, { label: string; score: number; detail: string }>;
+  issues: Array<{ dimension: string; label: string; message: string; recommendation: string }>;
+}
+
+export async function getProjectEvaluation(projectId: number) {
+  const { data } = await api.get(`/projects/${projectId}/evaluation`);
+  return data as { evaluation: QualityEvaluation | null };
+}
+
+export async function refreshProjectEvaluation(projectId: number) {
+  const { data } = await api.post(`/projects/${projectId}/evaluation/refresh`);
+  return data as { evaluation: QualityEvaluation };
+}
+
 export async function listSessions(projectId: number): Promise<SessionInfo[]> {
   const { data } = await api.get("/sessions", {
     params: { project_id: projectId },

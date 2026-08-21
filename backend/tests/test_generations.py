@@ -60,6 +60,21 @@ def test_generation_html_end_to_end(client, admin_headers):
     assert roles.count("user") >= 1
     assert "assistant" in roles
 
+    evaluation = client.get(
+        f"/api/generations/{gen['id']}/evaluation", headers=admin_headers
+    )
+    assert evaluation.status_code == 200, evaluation.text
+    payload = evaluation.json()["evaluation"]
+    assert payload is not None
+    assert set(payload["dimensions"]) == {"executable", "structure", "intent", "safety"}
+    assert payload["score"] >= 18
+
+    project_evaluation = client.get(
+        f"/api/projects/{project['id']}/evaluation", headers=admin_headers
+    )
+    assert project_evaluation.status_code == 200
+    assert project_evaluation.json()["evaluation"]["ref_id"] == gen["id"]
+
 
 def test_stack_advice_requires_confirmation_when_html_is_not_suitable(client, admin_headers):
     project = _create_project(client, admin_headers, "技术栈确认", tech_stack="html")

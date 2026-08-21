@@ -12,9 +12,12 @@ from app.agents.tools import list_files, read_file
 from app.agents.modification.agent import run_modification_agent
 from app.core.database import SessionLocal
 from app.models.message import Message
+from app.models.evaluation import Evaluation
 from app.models.modification import Modification
 from app.models.project import Project
+from app.models.session import Session as ChatSession
 from app.services.events import get_broker
+from app.services.evaluation import apply_visual_evaluation, evaluate_delivery, evaluation_wire
 from app.services.project import project_workspace, write_project_file
 from app.services.sandbox import validate_build
 from app.services.version import get_version, rollback_project, snapshot_project
@@ -273,7 +276,29 @@ async def run_modification_task(modification_id: int) -> None:
                 "version_id": version_id,
                 "review_status": "pending",
             }
+            evaluation = evaluate_delivery(
+                db,
+                project_id=modification.project_id,
+                ref_type="modification",
+                ref_id=modification.id,
+                succeeded=True,
+                requirement=modification.instruction,
+                workspace=workspace,
+                changed_files=changed_files,
+            )
             db.commit()
+
+        # Do not hold the edit transaction while the screenshot browser calls
+        # back into /preview, otherwise SQLite may make that request fail.
+        with SessionLocal() as db:
+            persisted = db.get(Evaluation, evaluation.id)
+            chat_session = db.get(ChatSession, session_id)
+            if persisted is not None and chat_session is not None:
+                evaluation = await apply_visual_evaluation(
+                    db, persisted, user_id=chat_session.user_id,
+                    requirement=instruction, workspace=workspace,
+                )
+                db.commit()
 
         for changed_path in changed_files:
             changed_content = read_file(workspace, changed_path)
@@ -285,6 +310,7 @@ async def run_modification_task(modification_id: int) -> None:
             "summary": summary,
             "version_id": version_id,
             "version_no": version_no,
+            "evaluation": evaluation_wire(evaluation),
         })
     except ModificationCancelled:
         with SessionLocal() as db:

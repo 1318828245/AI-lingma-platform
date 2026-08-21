@@ -155,5 +155,7 @@ async def project_screenshot(
     # A thumbnail is immutable until a new build explicitly invalidates it.
     # Let the home page reuse it instead of revalidating a large project card
     # every time the project list is opened.
-    response.headers["Cache-Control"] = "private, max-age=3600"
+    # Project ids can be reused by a fresh SQLite database. Never let a deleted
+    # project's card image be served from the browser cache for a new project.
+    response.headers["Cache-Control"] = "no-store"
     return response

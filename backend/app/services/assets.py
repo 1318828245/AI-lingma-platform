@@ -24,7 +24,9 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.models.asset import AssetJob, ProjectAsset
-from app.services.project import project_workspace, write_project_file
+from app.models.project import Project
+from app.services.project import project_thumbnail_path, project_workspace, write_project_file
+from app.services.sandbox import validate_build
 from app.services.task_manager import get_asset_task_manager
 
 AssetEvent = Callable[[dict], Awaitable[None]]
@@ -591,6 +593,7 @@ async def select_asset_candidate(db: Session, job: AssetJob, candidate_index: in
     target_path = str(request.get("target_path") or "")
     previous_reference = str(request.get("applied_reference") or "")
     replacement = selected.local_path or selected.external_url or ""
+    source_changed = False
     if target_path and previous_reference and replacement:
         target = project_workspace(job.project_id) / target_path
         if target.is_file() and target.read_text(encoding="utf-8").count(previous_reference) == 1:
@@ -599,6 +602,15 @@ async def select_asset_candidate(db: Session, job: AssetJob, candidate_index: in
                 target.read_text(encoding="utf-8").replace(previous_reference, replacement, 1),
             )
             request["applied_reference"] = replacement
+            source_changed = True
+    if source_changed:
+        project = db.get(Project, job.project_id)
+        if project is not None and project.tech_stack.lower().startswith("vue"):
+            ok, _log, errors = await validate_build(project_workspace(project), project.tech_stack)
+            if not ok:
+                raise ValueError(f"素材已替换，但预览构建失败：{'；'.join(errors[:2])}")
+        if project is not None:
+            project_thumbnail_path(project).unlink(missing_ok=True)
     request["selected_index"] = candidate_index
     job.request_json = request
     db.commit()

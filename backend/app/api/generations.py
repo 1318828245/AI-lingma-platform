@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.deps import get_current_user, get_current_user_sse, get_db
 from app.models.generation import Generation
+from app.models.evaluation import Evaluation
 from app.models.user import User
 from app.schemas.generation import (
     GenerationCreate,
@@ -26,6 +27,7 @@ from app.services.generation import (
 from app.services.project import get_owned_project
 from app.services.route_agent import route_tech_stack
 from app.services.task_manager import get_task_manager
+from app.services.evaluation import evaluation_wire
 
 router = APIRouter(tags=["generations"])
 
@@ -212,5 +214,10 @@ def generation_evaluation(
     db: Session = Depends(get_db),
 ):
     get_generation_for_user(db, generation_id, user.id)
-    # M3 里程碑实现 5 维自评与评分卡片
-    return {"evaluation": None, "note": "自动化评估将在 M3 里程碑实现"}
+    evaluation = (
+        db.query(Evaluation)
+        .filter(Evaluation.ref_type == "generation", Evaluation.ref_id == generation_id)
+        .order_by(Evaluation.created_at.desc(), Evaluation.id.desc())
+        .first()
+    )
+    return {"evaluation": evaluation_wire(evaluation) if evaluation else None}

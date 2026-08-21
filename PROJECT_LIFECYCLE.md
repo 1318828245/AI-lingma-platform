@@ -69,6 +69,10 @@ flowchart TD
     T -. 版本、资产与预览 API .-> U
 ```
 
+## M3 quality loop
+
+After a successful generation or modification, the platform writes an auditable five-dimension evaluation: build availability, project structure, requirement coverage, safety guardrails, and asset completeness. The project workbench exposes the latest score and repair recommendations; selecting a recommendation places a concrete repair prompt into the conversation input.
+
 ## 关键规则
 
 - 生成任务和修改任务都可使用受控素材收集；图片来源失败时会降级，不阻断项目交付。
