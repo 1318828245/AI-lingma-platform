@@ -1,3 +1,4 @@
+from app.models.audit import AuditLog
 from app.models.deployment import Deployment
 from app.models.evaluation import Evaluation
 from app.models.file import File
@@ -15,6 +16,7 @@ from app.models.user import User
 
 __all__ = [
     "AssetJob",
+    "AuditLog",
     "DailyStat",
     "Deployment",
     "Evaluation",

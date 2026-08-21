@@ -8,7 +8,7 @@
       <div class="nav-user">
         <span class="avatar" aria-hidden="true">{{ (auth.user?.username || 'U').slice(0, 1).toUpperCase() }}</span>
         <span class="user-name">{{ auth.user?.username || '未登录用户' }}</span>
-        <button class="logout" type="button" @click="logout">退出登录</button>
+        <button v-if="auth.user?.role === 'admin'" class="logout" type="button" @click="$router.push('/admin')">管理台</button><button class="logout" type="button" @click="logout">退出登录</button>
       </div>
     </header>
 

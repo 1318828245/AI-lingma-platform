@@ -3,6 +3,22 @@ def test_non_admin_forbidden(client, user_headers):
     assert resp.status_code == 403
 
 
+def test_admin_overview_returns_operational_sections(client, admin_headers):
+    response = client.get("/api/admin/overview", headers=admin_headers)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert set(data) == {"metrics", "projects", "users", "tasks", "deployments", "audits"}
+    assert {"projects", "users", "running_tasks", "online_sites"} <= set(data["metrics"])
+
+
+def test_admin_observability_returns_health_metrics_and_timeline(client, admin_headers):
+    response = client.get("/api/admin/observability", headers=admin_headers)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert {"health", "metrics", "alerts", "timeline"} == set(data)
+    assert any(item["name"] == "数据库" for item in data["health"])
+
+
 def test_admin_lists_users(client, admin_headers, user_headers):
     resp = client.get("/api/admin/users", headers=admin_headers)
     assert resp.status_code == 200
@@ -22,6 +38,9 @@ def test_admin_updates_quota_and_resets_password(client, admin_headers, user_hea
     )
     assert resp.status_code == 200
     assert resp.json()["quota"] == 50
+
+    overview = client.get("/api/admin/overview", headers=admin_headers).json()
+    assert any(item["action"] == "user.updated" and item["target_id"] == str(alice["id"]) for item in overview["audits"])
 
     resp = client.post(
         f"/api/admin/users/{alice['id']}/reset-password",

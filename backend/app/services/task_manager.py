@@ -45,6 +45,14 @@ class TaskManager:
             raise RuntimeError("任务管理器未启动")
         await self._queue.put((coro_factory, on_timeout))
 
+    @property
+    def queue_depth(self) -> int:
+        return self._queue.qsize() if self._queue is not None else 0
+
+    @property
+    def is_running(self) -> bool:
+        return self._running
+
     async def _loop(self) -> None:
         assert self._queue is not None and self._sem is not None
         while self._running:

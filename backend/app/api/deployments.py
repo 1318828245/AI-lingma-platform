@@ -12,6 +12,7 @@ from app.models.user import User
 from app.schemas.deployment import DeploymentCreate, DeploymentOut
 from app.services.deployment import activate_deployment, create_deployment, get_deployment, list_deployments, offline_deployment
 from app.services.project import get_owned_project
+from app.services.audit import record_audit
 
 
 router = APIRouter(tags=["deployments"])
@@ -40,19 +41,28 @@ def project_deployments(project_id: int, user: User = Depends(get_current_user),
 @router.post("/api/projects/{project_id}/deployments", response_model=DeploymentOut)
 def deploy_project(project_id: int, payload: DeploymentCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     project = get_owned_project(db, project_id, user.id)
-    return _deployment_out(create_deployment(db, project, user.id, payload.version_id), project)
+    deployment = create_deployment(db, project, user.id, payload.version_id)
+    record_audit(db, actor_id=user.id, action="deployment.created", target_type="deployment", target_id=deployment.id, detail={"project_id": project.id, "version": deployment.version})
+    db.commit()
+    return _deployment_out(deployment, project)
 
 
 @router.post("/api/projects/{project_id}/deployments/{deployment_id}/activate", response_model=DeploymentOut)
 def activate_project_deployment(project_id: int, deployment_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     project = get_owned_project(db, project_id, user.id)
-    return _deployment_out(activate_deployment(db, project, deployment_id), project)
+    deployment = activate_deployment(db, project, deployment_id)
+    record_audit(db, actor_id=user.id, action="deployment.activated", target_type="deployment", target_id=deployment.id, detail={"project_id": project.id, "version": deployment.version})
+    db.commit()
+    return _deployment_out(deployment, project)
 
 
 @router.post("/api/projects/{project_id}/deployments/{deployment_id}/offline", response_model=DeploymentOut)
 def offline_project_deployment(project_id: int, deployment_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     project = get_owned_project(db, project_id, user.id)
-    return _deployment_out(offline_deployment(db, project, deployment_id), project)
+    deployment = offline_deployment(db, project, deployment_id)
+    record_audit(db, actor_id=user.id, action="deployment.offlined", target_type="deployment", target_id=deployment.id, detail={"project_id": project.id, "version": deployment.version})
+    db.commit()
+    return _deployment_out(deployment, project)
 
 
 @router.get("/published/{slug}/{path:path}")

@@ -14,6 +14,7 @@ const router = createRouter({
       name: "projects",
       component: () => import("../views/ProjectListView.vue"),
     },
+    { path: "/admin", name: "admin", component: () => import("../views/AdminDashboardView.vue") },
     {
       path: "/projects/:id",
       name: "generation",
@@ -37,6 +38,7 @@ router.beforeEach((to) => {
   if (to.name === "login" && auth.isLoggedIn) {
     return { name: "projects" };
   }
+  if (to.name === "admin" && auth.user?.role !== "admin") return { name: "projects" };
 });
 
 export default router;
