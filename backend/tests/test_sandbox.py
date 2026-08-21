@@ -1,9 +1,10 @@
 import asyncio
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
-from app.services.sandbox import BuildError, _is_vite_project, _real_build, run_command
+from app.services.sandbox import BuildError, _docker_run_args, _is_vite_project, _real_build, run_command
 
 
 def test_run_command_npm_version():
@@ -98,6 +99,62 @@ def test_sandbox_mode_whitelist_rejects():
         asyncio.run(
             _run_sandbox_command(["curl", "http://example.com"], Path("."), timeout=60)
         )
+
+
+def _docker_settings():
+    return SimpleNamespace(
+        command_mode="docker",
+        docker_binary="docker",
+        docker_image="ai-lingma-sandbox:node20",
+        docker_network="none",
+        docker_workspace_path="/workspace",
+        docker_user="sandbox",
+        docker_memory_limit="768m",
+        docker_cpu_limit=1.0,
+        docker_pids_limit=256,
+        docker_tmpfs_size="128m",
+    )
+
+
+def test_docker_run_args_apply_execution_isolation(tmp_path, monkeypatch):
+    import app.services.sandbox as sandbox
+
+    monkeypatch.setattr(sandbox, "get_settings", _docker_settings)
+    args = _docker_run_args(["node", "--version"], tmp_path, "ai-lingma-run-test")
+
+    assert args[:5] == ["docker", "run", "--rm", "--init", "--pull=never"]
+    assert ["--network", "none"] == args[args.index("--network"):args.index("--network") + 2]
+    assert "--read-only" in args
+    assert ["--cap-drop", "ALL"] == args[args.index("--cap-drop"):args.index("--cap-drop") + 2]
+    assert ["--security-opt", "no-new-privileges"] == args[args.index("--security-opt"):args.index("--security-opt") + 2]
+    assert "type=bind,src=" + str(tmp_path.resolve()) + ",dst=/workspace" in args
+    assert args[-3:] == ["ai-lingma-sandbox:node20", "node", "--version"]
+
+
+def test_docker_mode_delegates_non_emulated_command(tmp_path, monkeypatch):
+    import app.services.sandbox as sandbox
+
+    called = []
+
+    async def fake_docker(command, cwd, timeout=300):
+        called.append((command, cwd, timeout))
+        return 0, "container ok\n"
+
+    monkeypatch.setattr(sandbox, "get_settings", _docker_settings)
+    monkeypatch.setattr(sandbox, "_run_docker_command", fake_docker)
+    code, output = asyncio.run(run_command(["node", "--version"], tmp_path, timeout=45))
+    assert (code, output) == (0, "container ok\n")
+    assert called == [(["node", "--version"], tmp_path.resolve(), 45)]
+
+
+def test_docker_mode_keeps_readonly_emulated_commands_local(tmp_path, monkeypatch):
+    import app.services.sandbox as sandbox
+
+    (tmp_path / "hello.txt").write_text("ok", encoding="utf-8")
+    monkeypatch.setattr(sandbox, "get_settings", _docker_settings)
+    code, output = asyncio.run(run_command(["cat", "hello.txt"], tmp_path, timeout=60))
+    assert code == 0
+    assert output == "ok\n"
 
 
 def test_shell_mode_supports_operators(tmp_path):

@@ -19,11 +19,11 @@
 修改会先创建编辑前快照；源码校验、交互控件校验或 Vue 重建失败时，工作区自动恢复到该快照。SSE 事件带递增 ID，浏览器断线重连会按 `Last-Event-ID` 补发未接收事件，避免漏掉运行阶段、工具或完成状态。
 
 用户用自然语言描述需求 → 自动生成可运行前端工程 → 实时预览点选修改 → 一键部署独立 URL。
-详细产品与技术规格见 [AI灵码平台-详细提示词-v3.md](AI灵码平台-详细提示词-v3.md)，构建进度见 `PROJECT_STATE.md`。
+详细产品与技术规格见 [AI灵码平台-详细提示词-v3.md](AI灵码平台-详细提示词-v3.md)，构建进度见 `PROJECT_STATE.md`，OpenCloudOS 主机初始化与部署命令见 [docs/DEPLOYMENT_OPENCLOUDOS.md](docs/DEPLOYMENT_OPENCLOUDOS.md)。
 
 ## 当前进度
 
-当前已完成 M1–M5、M6-0 可观测性与浏览器人工验收；下一阶段是 M6 生产化，随后实施 M7 Alpha 数据集成。准确实施状态以 `PROJECT_STATE.md` 与代码为准。
+当前已完成 M1–M5、M6-0 可观测性、M6-1 Docker 命令沙箱与浏览器人工验收；M6-2 正在实施生产 Compose 基线（前后端镜像、Nginx、PostgreSQL 与持久化目录），随后完成 HTTPS、备份、预览隔离与队列，再实施 M7 Alpha 数据集成。准确实施状态以 `PROJECT_STATE.md` 与代码为准。
 
 ### 模型与工具调用边界
 
@@ -132,12 +132,12 @@ python -m pytest -q
 
 ## 安全边界
 
-- 默认 SQLite + 本地文件存储；生产切换 PostgreSQL 与 Docker 沙箱（见提示词 v3）。
+- 默认 SQLite + 本地文件存储；生产 Compose 使用内部 PostgreSQL 与受控 storage 目录，配置见 `.env.production.example`。
 - **命令执行默认 shell 模式**（`AI_LINGMA_COMMAND_MODE=shell`）：AI 的工具命令等同本机
   终端权限，支持 `&&`/`||`/`;` 与引号；仅限本地开发。生产环境务必改为
   `sandbox`（白名单受限执行）并配合 Docker 沙箱。
 - 注册默认关闭（`AI_LINGMA_REGISTER_ENABLED=false`），仅管理员登录。
-- Docker 沙箱、完整护轨（LLM 复核）、部署引擎等里程碑尚未实现，暂不用于生产。
+- M6-2 已提供 Compose 部署基线，但尚未完成服务器镜像构建、域名/HTTPS、备份和独立命令沙箱执行器验收；公开后端不得挂载 Docker socket。
 
 ## 本轮前端与执行能力更新（2026-08-18）
 

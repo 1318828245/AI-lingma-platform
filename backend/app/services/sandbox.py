@@ -13,6 +13,7 @@ import re
 import shlex
 import shutil
 import subprocess
+from uuid import uuid4
 from pathlib import Path
 
 from app.core.config import get_settings
@@ -96,9 +97,22 @@ async def run_command(
     cwd = cwd.resolve()
     if not cwd.exists() or not cwd.is_dir():
         raise BuildError(f"工作目录不存在或不是目录: {cwd}")
-    if get_settings().command_mode == "shell":
+    mode = get_settings().command_mode.lower()
+    if mode == "shell":
         return await _run_shell_command(command, cwd, timeout)
+    if mode == "docker":
+        return await _run_docker_command(command, cwd, timeout)
     return await _run_sandbox_command(command, cwd, timeout)
+
+
+def _validate_sandbox_command(command: list[str]) -> None:
+    if not command:
+        raise BuildError("空命令")
+    if command[0] not in ALLOWED_COMMANDS:
+        raise BuildError(
+            f"命令不在白名单: {command[0]}"
+            "（支持 npm/npx/node/python/python3 与内置 ls/cat/pwd/dir/type/echo/find/grep/where/wc/head）"
+        )
 
 
 async def _run_sandbox_command(
@@ -107,15 +121,9 @@ async def _run_sandbox_command(
     timeout: int = 300,
 ) -> tuple[int, str]:
     command = [str(part) for part in command]
-    if not command:
-        raise BuildError("空命令")
     if command[0] in EMULATED_COMMANDS:
         return _emulate_command(command, cwd)
-    if command[0] not in ALLOWED_COMMANDS:
-        raise BuildError(
-            f"命令不在白名单: {command[0]}"
-            "（支持 npm/npx/node/python/python3 与内置 ls/cat/pwd/dir/type/echo/find/grep/where/wc/head）"
-        )
+    _validate_sandbox_command(command)
     exe = _resolve_exe(command[0])
     if exe is None:
         raise BuildError(f"找不到可执行文件: {command[0]}")
@@ -151,6 +159,99 @@ async def _run_sandbox_command(
             with contextlib.suppress(Exception):
                 await proc.communicate()
         raise BuildError(f"命令超时（{timeout}s）: {' '.join(command)}")
+    text = output.decode("utf-8", errors="replace")
+    if "\ufffd" in text:
+        text = output.decode("gbk", errors="replace")
+    return proc.returncode or 0, text
+
+
+def _docker_run_args(command: list[str], cwd: Path, container_name: str) -> list[str]:
+    """构建 Docker CLI 参数，不经 shell 拼接，避免工作区路径或参数注入。"""
+    settings = get_settings()
+    workspace = str(cwd.resolve())
+    mount = f"type=bind,src={workspace},dst={settings.docker_workspace_path}"
+    return [
+        settings.docker_binary,
+        "run",
+        "--rm",
+        "--init",
+        "--pull=never",
+        "--name",
+        container_name,
+        "--network",
+        settings.docker_network,
+        "--cap-drop",
+        "ALL",
+        "--security-opt",
+        "no-new-privileges",
+        "--pids-limit",
+        str(settings.docker_pids_limit),
+        "--memory",
+        settings.docker_memory_limit,
+        "--cpus",
+        str(settings.docker_cpu_limit),
+        "--read-only",
+        "--tmpfs",
+        f"/tmp:rw,noexec,nosuid,size={settings.docker_tmpfs_size}",
+        "--mount",
+        mount,
+        "--workdir",
+        settings.docker_workspace_path,
+        "--user",
+        settings.docker_user,
+        "--env",
+        "HOME=/tmp",
+        "--env",
+        "npm_config_cache=/tmp/npm-cache",
+        settings.docker_image,
+        *command,
+    ]
+
+
+async def _run_docker_command(
+    command: list[str], cwd: Path, timeout: int = 300
+) -> tuple[int, str]:
+    """在无网络、最小权限、资源受限的 Docker 容器中运行白名单命令。
+
+    本地的只读检查命令仍由受控模拟器处理；其余命令绝不在宿主机执行。
+    """
+    command = [str(part) for part in command]
+    if command and command[0] in EMULATED_COMMANDS:
+        return _emulate_command(command, cwd)
+    _validate_sandbox_command(command)
+    settings = get_settings()
+    name = f"ai-lingma-run-{uuid4().hex[:12]}"
+    args = _docker_run_args(command, cwd, name)
+    proc = None
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        output, _ = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except FileNotFoundError as exc:
+        raise BuildError(
+            f"Docker 沙箱不可用：找不到命令 {settings.docker_binary}"
+        ) from exc
+    except NotImplementedError as exc:
+        raise BuildError("Docker 沙箱不可用：当前运行环境不支持异步子进程") from exc
+    except asyncio.TimeoutError as exc:
+        # docker run 客户端被终止时容器未必会立即退出，按唯一名称显式清理。
+        if proc is not None:
+            proc.kill()
+            with contextlib.suppress(Exception):
+                await proc.communicate()
+        with contextlib.suppress(Exception):
+            cleanup = await asyncio.create_subprocess_exec(
+                settings.docker_binary,
+                "kill",
+                name,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            await asyncio.wait_for(cleanup.wait(), timeout=15)
+        raise BuildError(f"Docker 沙箱命令超时（{timeout}s）：{' '.join(command)}") from exc
     text = output.decode("utf-8", errors="replace")
     if "\ufffd" in text:
         text = output.decode("gbk", errors="replace")

@@ -80,8 +80,20 @@ class Settings(BaseSettings):
     asset_unsplash_api_url: str = "https://api.unsplash.com"
 
     # 命令执行模式：shell=本机终端语义（无沙箱，本地开发默认）；
-    # sandbox=白名单受限执行（生产/受限环境）
+    # sandbox=白名单受限执行；docker=受限容器执行（生产环境）。
     command_mode: str = "shell"
+
+    # M6-1 Docker 命令沙箱。镜像必须在部署时预构建/预拉取；容器默认无网络，
+    # 依赖安装应使用镜像内置依赖或由受控的离线 npm 缓存提供。
+    docker_binary: str = "docker"
+    docker_image: str = "ai-lingma-sandbox:node20"
+    docker_network: str = "none"
+    docker_workspace_path: str = "/workspace"
+    docker_user: str = "sandbox"
+    docker_memory_limit: str = "768m"
+    docker_cpu_limit: float = 1.0
+    docker_pids_limit: int = 256
+    docker_tmpfs_size: str = "128m"
 
     # 首页项目截图（无头浏览器）
     backend_url: str = "http://127.0.0.1:8000"
@@ -103,6 +115,10 @@ class Settings(BaseSettings):
     @property
     def publish_dir(self) -> Path:
         return self.storage_dir / "publish"
+
+    @property
+    def sandbox_dependency_cache_dir(self) -> Path:
+        return self.storage_dir / "sandbox-npm-cache"
 
 
 @lru_cache
