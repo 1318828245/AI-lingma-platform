@@ -14,6 +14,16 @@ const router = createRouter({
       name: "projects",
       component: () => import("../views/ProjectListView.vue"),
     },
+    {
+      path: "/alpha",
+      name: "alpha",
+      component: () => import("../views/AlphaIntroductionView.vue"),
+    },
+    {
+      path: "/beta",
+      name: "beta",
+      component: () => import("../views/BetaIntroductionView.vue"),
+    },
     { path: "/admin", name: "admin", component: () => import("../views/AdminDashboardView.vue") },
     {
       path: "/projects/:id",

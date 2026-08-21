@@ -1,31 +1,22 @@
-# Browser acceptance checklist
+# 浏览器人工验收清单
 
-This checklist is the browser-visible acceptance layer for the generation
-workspace. API and SSE behavior are covered by backend tests; run these steps
-after a frontend or browser-control session is available.
+本清单用于验收生成工作台中用户在浏览器里实际可见、可操作的行为。API 与 SSE
+协议行为已由后端测试覆盖；当前端或浏览器控制环境可用后，按以下步骤执行。
 
-## Technology-stack confirmation
+## 技术栈确认
 
-1. Create an HTML project and submit a one-page profile request: no stack
-   confirmation should appear.
-2. Create an HTML project and submit a dashboard request with login, routing,
-   filtering and pagination: the confirmation dialog should recommend Vue 3.
-3. Confirm the switch: the project header and home card should show Vue 3.
-4. Repeat, choose “keep HTML”: the header and home card should remain HTML and
-   the generated output must not contain Vue/Vite files.
+1. 创建 HTML 项目并提交“单页个人简介”需求：不应出现技术栈确认弹窗。
+2. 创建 HTML 项目并提交包含登录、路由、筛选和分页的仪表盘需求：确认弹窗应建议使用 Vue 3。
+3. 确认切换：项目页标题和首页项目卡片均应显示 Vue 3。
+4. 重复第 2 步并选择“保留 HTML”：标题和项目卡片应保持 HTML，生成产物中不得包含 Vue/Vite 文件。
 
-## Generation and modification replay
+## 生成与修改的恢复
 
-1. Start a generation or modification, reload the workspace while it runs,
-   then confirm the same stage, chat output and SSE progress resume.
-2. Add a button through element selection or chat. Confirm the chat retains the
-   model summary, the diff card and its accept/undo action after re-entry.
-3. Accept and undo a modification in separate runs. Re-enter each project and
-   confirm the selected result is not requested again.
+1. 启动生成或修改任务，在执行过程中刷新工作台；确认阶段、聊天输出和 SSE 进度能够恢复。
+2. 通过元素点选或聊天新增一个按钮；重新进入项目后，确认聊天仍保留模型总结、diff 卡片和接受/撤销操作。
+3. 分别执行一次“接受修改”和“撤销修改”；重新进入对应项目后，确认系统不会再次要求选择已处理的结果。
 
-## Preview performance
+## 预览性能
 
-1. Open a large Vue project twice. The second iframe load should reuse hashed
-   `dist/assets` files and avoid a full bundle download.
-2. Return to the home page. Only cards near the viewport should request a
-   thumbnail; off-screen cards must not begin screenshot generation.
+1. 连续两次打开大型 Vue 项目；第二次加载 iframe 时应复用带哈希的 `dist/assets` 文件，避免重新下载完整构建产物。
+2. 返回首页；只有接近视口的项目卡片才应请求缩略图，屏幕外卡片不得开始生成截图。
