@@ -87,3 +87,21 @@ def test_project_version_undo_restores_previous_snapshot(client, admin_headers):
 
         workspace = project_workspace(project_id)
         assert (workspace / "index.html").read_text(encoding="utf-8") == "<h1>before</h1>"
+
+
+def test_project_version_excludes_dependency_and_build_directories(client, admin_headers):
+    created = client.post(
+        "/api/projects",
+        headers=admin_headers,
+        json={"name": "忽略依赖目录", "template": "blank", "tech_stack": "vue3"},
+    ).json()
+
+    with SessionLocal() as db:
+        project_id = created["id"]
+        write_project_file(db, project_id, "index.html", "<div />")
+        write_project_file(db, project_id, "node_modules/.bin/vite", "binary")
+        write_project_file(db, project_id, "dist/index.html", "built")
+        version = snapshot_project(db, project_id, source_type="test", summary="忽略生成目录")
+        db.commit()
+
+    assert set(version.snapshot_manifest_json) == {"index.html"}

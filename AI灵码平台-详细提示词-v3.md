@@ -29,7 +29,7 @@ AI灵码平台让用户以自然语言生成并迭代前端项目：创建项目
 | M5：运营与管理 | 完成 | 管理台、搜索分页、配额/启停、素材重试与持久化审计。 |
 | M6-0：可观测性 | 完成 | 健康、队列、成功率、告警和项目级执行链路观测。 |
 | M6-1：Docker 命令沙箱 | 完成 | 可选 Docker 执行模式、无网络/最小权限/资源限制、基础镜像与回归测试。 |
-| M6：生产化 | 进行中 | M6-2 已加入 Compose 基线（前后端镜像、Nginx、PostgreSQL、持久化目录与健康检查）；服务器镜像构建、HTTPS、备份、独立命令执行器与跨进程队列尚未落地。 |
+| M6：生产化 | 进行中 | M6-2 已提供 Compose、Nginx、PostgreSQL、健康检查、真实 LLM 配置、备份/恢复/升级资产；服务器 HTTPS、真实 API、恢复演练、独立命令执行器与跨进程队列尚待验收。 |
 | M7 Alpha：数据集成 | 规划中 | OpenAPI/Swagger 导入、契约解析、真实数据绑定与接口验证；当前仅有前端介绍入口。 |
 | M8 Beta：全栈交付 | 概念阶段 | 受控后端、数据库、鉴权、测试与部署交付；当前仅有前端介绍入口。 |
 
@@ -113,7 +113,7 @@ FastAPI 当前注册的路由模块包括：`auth`、`users`、`projects`、`ses
 - 已有：所有者隔离、路径穿越防护、输入/输出规则护轨、工具权限/参数/写入量限制、修改前后快照、失败回滚、SSE 断线游标补发、任务取消/超时/恢复。
 - iframe 预览采用 sandbox，但目前仍允许脚本、同源、表单和弹窗，以保障生成项目的基础运行；严格 CSP 与容器级执行隔离属于 M6。
 - 当前任务队列和 SSE 缓冲是进程内实现；多进程共享、Redis 队列和跨进程实时恢复尚未实现。
-- M6-2 的 Compose 将 PostgreSQL、后端和 Web 服务置于内部网络，Web 端口只绑定宿主机 `127.0.0.1:8080`，由宿主 Nginx 再提供公网 HTTPS；后端不挂载 `/var/run/docker.sock`。初始生产配置为 `mock + sandbox`，真实代码执行须等待独立沙箱执行器。
+- M6-2 的 Compose 将 PostgreSQL、后端和 Web 服务置于内部网络，Web 端口只绑定宿主机 `127.0.0.1:8080`，由宿主 Nginx 再提供公网 HTTPS；后端不挂载 `/var/run/docker.sock`。可在保持 `mock + sandbox` 构建策略时启用真实 LLM Key；真实代码构建执行须等待独立沙箱执行器。
 - `AI_LINGMA_COMMAND_MODE=docker` 可将非内置检查命令放入独立 Docker 容器：默认无网络、移除 capabilities、禁止新增权限、限制 PID/CPU/内存并使用只读根文件系统；仅工作区可写。镜像必须预构建，依赖通过镜像或受控离线缓存提供。开发默认 `shell` 仍是本机终端，不应作为生产隔离声明。
 
 ## 8. 已实现：异步素材编排
@@ -192,7 +192,7 @@ PROJECT_STATE.md            # 当前实施状态，≤120 行
 
 ## 11. 下一步：M6 生产化
 
-1. 在 Docker 主机验证 `docker-compose.yml` 的前后端与 PostgreSQL 镜像构建、启动和健康检查，配置宿主 Nginx、域名、HTTPS 以及 PostgreSQL/storage 的备份和升级/回滚；
+1. 在 Docker 主机验收 Compose 镜像构建、域名 HTTPS、真实 LLM、PostgreSQL/storage 备份定时器和恢复演练；
 2. 在不向公开后端暴露 Docker socket 的前提下，完成独立命令沙箱执行器与严格预览隔离；随后落地跨进程任务队列和数据运维能力；
 3. 在 M6 基础稳定后，保留 LangGraph 作为业务编排层，采用适配器模式渐进评估 Deep Agents：先接入上下文压缩、工作区 filesystem backend 与 Todo，再将生成和修改迁移为不同权限的 harness profile；Docker sandbox、审批 interrupt、长期记忆和只读 verifier 子 Agent 仅在 PoC 验证质量、成本及事件兼容性后启用。
 4. 启动 M7 Alpha：以 OpenAPI/Swagger 导入为首个数据源，生成类型安全 API Client 与数据访问层，支持 Mock/真实数据源切换，并在生成前要求用户确认页面—接口—字段映射；现有 demo 生成模式继续独立保留。

@@ -15,10 +15,12 @@ COPY backend/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend /app
+COPY docker/backend/start.sh /app/start.sh
 RUN mkdir -p /data \
+    && chmod 755 /app/start.sh \
     && chown -R app:app /app /data
 
 USER app
 EXPOSE 8000
 
-CMD ["python", "-m", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*"]
+CMD ["/app/start.sh"]

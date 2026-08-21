@@ -2,6 +2,7 @@
 
 import difflib
 import hashlib
+import os
 import shutil
 import uuid
 from datetime import datetime
@@ -40,8 +41,22 @@ def _workspace_files(project_id: int) -> list[tuple[str, Path]]:
     if not workspace.exists():
         return []
     result: list[tuple[str, Path]] = []
-    for path in workspace.rglob("*"):
-        if path.is_file():
+    # 依赖/构建目录不属于项目源代码。npm install 会在 node_modules/.bin
+    # 创建符号链接；将其纳入快照既浪费空间，也会被安全校验错误拦截。
+    excluded_dirs = {"node_modules", ".git", "dist", "build"}
+    for current, dirs, files in os.walk(workspace, followlinks=False):
+        current_path = Path(current)
+        kept_dirs: list[str] = []
+        for name in dirs:
+            path = current_path / name
+            if name in excluded_dirs:
+                continue
+            if path.is_symlink():
+                raise HTTPException(status_code=400, detail="工作区包含不允许的符号链接")
+            kept_dirs.append(name)
+        dirs[:] = kept_dirs
+        for name in files:
+            path = current_path / name
             if path.is_symlink():
                 raise HTTPException(status_code=400, detail="工作区包含不允许的符号链接")
             result.append((path.relative_to(workspace).as_posix(), path))

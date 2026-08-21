@@ -1,6 +1,6 @@
 # PROJECT_STATE
 
-> 部署主机初始化与命令记录见 [docs/DEPLOYMENT_OPENCLOUDOS.md](docs/DEPLOYMENT_OPENCLOUDOS.md)。当前服务器已确认采用 OpenCloudOS 9.6，Docker 29.7.2/Compose v5.5.0 已验收。M6-2 已开始：生产 Compose、Nginx、PostgreSQL 与持久化配置已进入代码库，尚待镜像构建和服务器部署验收。
+> 部署主机初始化与命令记录见 [docs/DEPLOYMENT_OPENCLOUDOS.md](docs/DEPLOYMENT_OPENCLOUDOS.md)。当前服务器已确认采用 OpenCloudOS 9.6，Docker 29.7.2/Compose v5.5.0 已验收。M6-2 部署资产、真实 LLM 配置说明、HTTPS、备份/恢复和升级手册已完成；域名解析、HTTPS 签发、真实 API 验收和恢复演练需在服务器执行。
 
 更新：2026-08-22（以当前代码和自动化验证为准）
 
@@ -9,7 +9,7 @@
 - 当前：M6-0 可观测性完成；M3/M4/M5 交付与运营闭环完成。
 - M1 生成核心回路：完成。
 - M2 可控修改回路：完成。
-- M5-2 运营动作、M6-0 可观测性：完成；M6-1 Docker 命令沙箱：完成；M6-2 生产部署基线：进行中。
+- M5-2 运营动作、M6-0 可观测性：完成；M6-1 Docker 命令沙箱：完成；M6-2 生产部署资产与运维手册：完成，待服务器验收。
 - Alpha（接口契约驱动的真实数据前端生成）：仅完成产品介绍页，尚未实现数据源导入、真实接口绑定或 Alpha 项目创建。
 - Beta（受控全栈应用生成）：仅完成产品介绍页，尚未生成后端服务、数据库、鉴权或部署交付物。
 
@@ -35,7 +35,7 @@
 - [x] M5-2 运营动作：管理台支持按分区搜索与分页，可修改其他用户的生成配额和启停状态，并可重新排队失败素材任务；用户管理、平台设置、素材重试和发布创建/上线/下线均写入持久化审计记录。
 - [x] M6-0 可观测性：`/api/admin/observability` 聚合数据库、进程内生成/素材队列、视觉评估和素材来源的健康状态，计算队列深度、成功率、失败事件并给出告警；管理台按运营大屏、项目管理、用户管理、操作管理组织，大屏限制最近 12 条事件，项目运行观测限制选中项目最近 20 条链路事件。
 - [x] M6-1 Docker 命令沙箱：`AI_LINGMA_COMMAND_MODE=docker` 时，非内置检查命令在独立容器中执行；默认无网络、移除 capabilities、禁止新增权限、限制 PID/CPU/内存、只读根文件系统，仅将项目工作区挂载到容器。基础镜像与部署说明位于 `backend/docker/sandbox/`；依赖必须预构建或使用受控离线缓存。
-- [x] M6-2（进行中）生产部署基线：已新增前后端镜像、内部 PostgreSQL、Nginx 反代、健康检查、仅绑定 `127.0.0.1:8080` 的 Compose 配置和生产环境变量模板；实际镜像构建、域名/HTTPS、备份与上线验收未完成。
+- [x] M6-2 生产部署资产：前后端镜像、内部 PostgreSQL、Nginx 反代、健康检查、仅绑定 `127.0.0.1:8080` 的 Compose 配置、真实 DeepSeek 配置模板、备份脚本、systemd 定时器、恢复与升级手册已完成；实际镜像构建、域名/HTTPS、真实 API 与恢复演练未完成。
 
 ## 已验证
 
@@ -65,7 +65,7 @@
 
 ## 下一步
 
-1. 完成 M6-2：验证 Compose 镜像构建与启动，配置宿主 Nginx/域名/HTTPS，完成 PostgreSQL 与 storage 备份、升级/回滚说明；独立命令沙箱执行器落地前，生产保持 `mock + sandbox`，不向公开后端挂载 Docker socket。
+1. 在服务器验收 M6-2：完成域名 DNS、HTTPS、真实 API、Compose 健康检查、备份定时器与恢复演练；独立命令沙箱执行器落地前，生产保持 `mock + sandbox`，不向公开后端挂载 Docker socket。
 2. M6 基础稳定后，以渐进方式评估并接入 Deep Agents：先接入上下文压缩、工作区 filesystem backend 与运行中 Todo；再将生成和修改分别迁移为受控 harness profile；Docker sandbox、审批 interrupt、长期记忆和只读 verifier 子 Agent 按验证结果分阶段启用。
 3. 启动 Alpha 数据集成里程碑：先实现 OpenAPI/Swagger 导入、接口契约解析、类型安全 API Client、Mock/真实数据源切换和页面—接口—字段绑定确认；现有 demo 生成模式保持不变。
 4. 在 Alpha 的契约、权限和验证机制稳定后，评估 Beta 全栈范围：以结构化规格、受控沙箱、数据库迁移、权限校验、测试证据和人工审批为前提；不承诺仅凭自然语言生成任意生产后端。

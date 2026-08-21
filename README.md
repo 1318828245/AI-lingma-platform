@@ -23,7 +23,7 @@
 
 ## 当前进度
 
-当前已完成 M1–M5、M6-0 可观测性、M6-1 Docker 命令沙箱与浏览器人工验收；M6-2 正在实施生产 Compose 基线（前后端镜像、Nginx、PostgreSQL 与持久化目录），随后完成 HTTPS、备份、预览隔离与队列，再实施 M7 Alpha 数据集成。准确实施状态以 `PROJECT_STATE.md` 与代码为准。
+当前已完成 M1–M5、M6-0 可观测性、M6-1 Docker 命令沙箱与浏览器人工验收；M6-2 已补齐生产 Compose、Nginx、PostgreSQL、真实 LLM 配置与备份/恢复/升级资产，待服务器完成 HTTPS、真实 API 和恢复演练；随后完成预览隔离与队列，再实施 M7 Alpha 数据集成。准确实施状态以 `PROJECT_STATE.md` 与代码为准。
 
 ### 模型与工具调用边界
 
