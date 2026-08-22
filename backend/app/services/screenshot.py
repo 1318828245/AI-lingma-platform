@@ -1,6 +1,7 @@
 """首页项目截图：用本机无头浏览器（Edge/Chrome）截取预览页。"""
 
 import asyncio
+import os
 import shutil
 import subprocess
 import tempfile
@@ -42,7 +43,7 @@ def _get_lock() -> asyncio.Lock:
 
 
 async def _capture_with_sync_fallback(
-    command: list[str], timeout: int
+    command: list[str], timeout: int, env: dict[str, str]
 ) -> None:
     """asyncio 子进程不可用时在线程中运行同步浏览器进程。"""
 
@@ -54,6 +55,7 @@ async def _capture_with_sync_fallback(
                 stderr=subprocess.DEVNULL,
                 timeout=timeout,
                 check=False,
+                env=env,
             )
         except subprocess.TimeoutExpired:
             # run 已经负责终止超时子进程；截图文件存在性由调用方判断。
@@ -73,10 +75,17 @@ async def capture_screenshot(url: str, output: Path, timeout: int | None = None)
     async with _get_lock():
         for _ in range(2):
             user_dir = tempfile.mkdtemp(prefix="ailingma_shot_")
+            home_dir = tempfile.mkdtemp(prefix="ailingma_home_")
             command = [
                 browser,
                 "--headless",
                 "--disable-gpu",
+                # 容器内 Chromium 的 sandbox 在部分云主机内核上不可用。
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-crash-reporter",
+                "--disable-breakpad",
+                "--noerrdialogs",
                 "--hide-scrollbars",
                 "--no-first-run",
                 "--disable-extensions",
@@ -86,11 +95,13 @@ async def capture_screenshot(url: str, output: Path, timeout: int | None = None)
                 f"--screenshot={output}",
                 url,
             ]
+            env = {**os.environ, "HOME": home_dir}
             try:
                 proc = await asyncio.create_subprocess_exec(
                     *command,
                     stdout=asyncio.subprocess.DEVNULL,
                     stderr=asyncio.subprocess.DEVNULL,
+                    env=env,
                 )
                 try:
                     await asyncio.wait_for(proc.wait(), timeout=timeout)
@@ -101,11 +112,12 @@ async def capture_screenshot(url: str, output: Path, timeout: int | None = None)
                         pass
             except NotImplementedError:
                 with suppress(Exception):
-                    await _capture_with_sync_fallback(command, timeout)
+                    await _capture_with_sync_fallback(command, timeout, env)
             except OSError:
                 pass
             finally:
                 shutil.rmtree(user_dir, ignore_errors=True)
+                shutil.rmtree(home_dir, ignore_errors=True)
             if output.exists() and output.stat().st_size > 0:
                 return True
     return False

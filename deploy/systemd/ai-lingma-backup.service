@@ -1,0 +1,8 @@
+[Unit]
+Description=AI Lingma PostgreSQL and storage backup
+Wants=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/ai-lingma/scripts/backup.sh
