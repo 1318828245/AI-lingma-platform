@@ -1,6 +1,6 @@
 # PROJECT_STATE
 
-> 部署主机初始化与命令记录见 [docs/DEPLOYMENT_OPENCLOUDOS.md](docs/DEPLOYMENT_OPENCLOUDOS.md)。当前服务器已确认采用 OpenCloudOS 9.6，Docker 29.7.2/Compose v5.5.0 已验收。M6-2 部署资产、真实 LLM 配置说明、HTTPS、备份/恢复和升级手册已完成；域名解析、HTTPS 签发、真实 API 验收和恢复演练需在服务器执行。
+> 部署流程见 [docs/部署手册.md](docs/部署手册.md)，日常命令见 [docs/部署命令.md](docs/部署命令.md)。当前服务器已确认采用 OpenCloudOS 9.6，Docker 29.7.2/Compose v5.5.0 已验收。M6-2 部署资产、真实 LLM 配置说明、HTTPS、备份/恢复和升级手册已完成；域名解析、HTTPS 签发、真实 API 验收和恢复演练需在服务器执行。
 
 更新：2026-08-22（以当前代码和自动化验证为准）
 
@@ -50,7 +50,6 @@
 - 前端：`npm run build` 通过（含类型检查）。
 - 真实模型：`backend/smoke_agent.py`、`smoke_route_agent.py`、`smoke_modification.py` 已完成生成、路由和修改冒烟。
 - 静态检查：`git diff --check` 通过。
-- 浏览器人工验收：`docs/BROWSER_ACCEPTANCE.md` 已通过，覆盖技术栈确认、生成/修改恢复与预览性能。
 - M6-1：Docker 参数隔离与执行分流由 `tests/test_sandbox.py` 覆盖；实际 Docker 镜像运行验收取决于部署主机已安装 Docker。
 - 部署主机：OpenCloudOS 9.6（x86_64）、4G 内存/60G 磁盘/1G swap；`deploy` 密钥登录和 sudo、Docker 29.7.2、Compose v5.5.0、`hello-world`、Docker 自启动均已人工验收。
 

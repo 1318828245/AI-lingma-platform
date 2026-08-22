@@ -19,7 +19,7 @@
 修改会先创建编辑前快照；源码校验、交互控件校验或 Vue 重建失败时，工作区自动恢复到该快照。SSE 事件带递增 ID，浏览器断线重连会按 `Last-Event-ID` 补发未接收事件，避免漏掉运行阶段、工具或完成状态。
 
 用户用自然语言描述需求 → 自动生成可运行前端工程 → 实时预览点选修改 → 一键部署独立 URL。
-详细产品与技术规格见 [AI灵码平台-详细提示词-v3.md](AI灵码平台-详细提示词-v3.md)，构建进度见 `PROJECT_STATE.md`，OpenCloudOS 主机初始化与部署命令见 [docs/DEPLOYMENT_OPENCLOUDOS.md](docs/DEPLOYMENT_OPENCLOUDOS.md)。
+详细产品与技术规格见 [AI灵码平台-详细提示词-v3.md](AI灵码平台-详细提示词-v3.md)，构建进度见 `PROJECT_STATE.md`，服务器部署见 [docs/部署手册.md](docs/部署手册.md)，日常命令见 [docs/部署命令.md](docs/部署命令.md)。
 
 ## 当前进度
 
@@ -41,7 +41,6 @@
 ### 验收与性能
 
 - `backend/evals/agent_regression_cases.json` 定义路由、生成和修改提示词的离线回归样例；真实模型验收使用 `backend/smoke_*.py`。
-- 浏览器可见行为的验收步骤见 `docs/BROWSER_ACCEPTANCE.md`。
 - 前端入口按需加载 Element Plus 的消息组件样式，并仅打包 Latin Web 字体；中文内容由系统字体回退。路由页面维持动态加载。
 
 ### 存储命名

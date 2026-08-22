@@ -179,7 +179,6 @@ storage/
   versions/{slug}/
   publish/{deployment-slug}/
 docs/
-  BROWSER_ACCEPTANCE.md
 PROJECT_STATE.md            # 当前实施状态，≤120 行
 ```
 
@@ -188,7 +187,6 @@ PROJECT_STATE.md            # 当前实施状态，≤120 行
 - 后端：管理员观测接口测试最近通过 7 项；管理与发布定向测试最近通过 9 项。
 - 前端：`npm run build` 已通过；首屏改为 Element Plus 必要组件注册与按需样式，避免全量组件包进入入口。
 - 真实模型冒烟：`backend/smoke_agent.py`、`smoke_route_agent.py`、`smoke_modification.py` 已验证生成、路由与带点击反馈的修改链路。
-- 浏览器人工验收已按 `docs/BROWSER_ACCEPTANCE.md` 通过，覆盖技术栈确认、生成/修改恢复与预览性能。
 
 ## 11. 下一步：M6 生产化
 
