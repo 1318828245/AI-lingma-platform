@@ -97,6 +97,9 @@ class Settings(BaseSettings):
 
     # 首页项目截图（无头浏览器）
     backend_url: str = "http://127.0.0.1:8000"
+    # 对浏览器公开的站点根地址。生产环境必须配置为 HTTPS 域名，不能使用
+    # Docker 服务名或容器内部地址；留空时由当前反向代理请求的地址推断。
+    public_base_url: str = ""
     screenshot_timeout_seconds: int = 45
     screenshot_virtual_time_budget_ms: int = 3000
 

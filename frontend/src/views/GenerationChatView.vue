@@ -822,7 +822,9 @@ onMounted(async () => {
   ) {
     router.replace({ query: {} });
     requirement.value = autoRequirement;
-    await submitRequirement();
+    // 首页已创建新的空项目；该需求必须进入生成工作流。需求正文可能包含
+    // “修改”“删除”“添加”等业务功能描述，不能据此误判为对既有项目的修改。
+    await submitRequirement({ forceGeneration: true });
   }
 });
 
@@ -1003,13 +1005,13 @@ onBeforeUnmount(() => {
   resizeEnd?.();
 });
 
-async function submitRequirement() {
+async function submitRequirement(options: { forceGeneration?: boolean } = {}) {
   const text = requirement.value.trim();
   if (!text) {
     ElMessage.warning("先描述一下你的需求");
     return;
   }
-  if (shouldSubmitModification(text)) {
+  if (!options.forceGeneration && shouldSubmitModification(text)) {
     await submitDirectModification(text);
     return;
   }

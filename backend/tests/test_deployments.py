@@ -1,4 +1,5 @@
 from app.core.database import SessionLocal
+from app.core.config import get_settings
 from app.services.project import write_project_file
 from app.services.version import snapshot_project
 
@@ -10,8 +11,9 @@ def _project_with_build(client, headers):
         json={"name": "Deployment demo", "template": "blank", "tech_stack": "html"},
     ).json()
     with SessionLocal() as db:
-        write_project_file(db, project["id"], "dist/index.html", "<h1>Published delivery</h1>")
-        write_project_file(db, project["id"], "dist/assets/app.js", "console.log('ready')")
+        # 版本快照只收录源文件；静态 HTML 项目的根目录本身就是可发布交付物。
+        write_project_file(db, project["id"], "index.html", "<h1>Published delivery</h1>")
+        write_project_file(db, project["id"], "assets/app.js", "console.log('ready')")
         version = snapshot_project(db, project["id"], source_type="test", summary="ready to publish")
         db.commit()
     return project, version.id
@@ -44,6 +46,22 @@ def test_publish_snapshot_and_serve_public_site(client, admin_headers):
     assert records.json()[0]["id"] == deployment["id"]
 
 
+def test_publish_urls_use_configured_public_base_url(client, admin_headers, monkeypatch):
+    monkeypatch.setattr(get_settings(), "public_base_url", "https://app.example.com/")
+    project, version_id = _project_with_build(client, admin_headers)
+
+    response = client.post(
+        f"/api/projects/{project['id']}/deployments",
+        headers=admin_headers,
+        json={"version_id": version_id},
+    )
+
+    assert response.status_code == 200, response.text
+    deployment = response.json()
+    assert deployment["url"] == f"https://app.example.com/published/{deployment['slug']}/"
+    assert deployment["site_url"] == f"https://app.example.com/sites/{project['slug']}/"
+
+
 def test_publish_plain_html_multifile_project(client, admin_headers):
     project = client.post(
         "/api/projects",
@@ -72,7 +90,7 @@ def test_switch_active_deployment_and_take_offline(client, admin_headers):
         f"/api/projects/{project['id']}/deployments", headers=admin_headers, json={"version_id": first_version_id}
     ).json()
     with SessionLocal() as db:
-        write_project_file(db, project["id"], "dist/index.html", "<h1>Second delivery</h1>")
+        write_project_file(db, project["id"], "index.html", "<h1>Second delivery</h1>")
         second_version = snapshot_project(db, project["id"], source_type="test", summary="second")
         db.commit()
         second_version_id = second_version.id

@@ -11,12 +11,20 @@ from app.services.project import migrate_workspace_layout
 from app.services.task_manager import get_task_manager
 from app.services.task_manager import get_asset_task_manager
 from app.services.assets import pending_asset_job_ids, run_asset_job
+from app.services.settings_store import settings_store
 from functools import partial
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    settings_store.apply(get_settings(), {
+        "register_enabled", "default_user_quota", "build_mode", "command_mode",
+        "generation_concurrency", "modification_concurrency", "task_timeout_seconds",
+        "max_requirement_length", "agent_max_iterations", "llm_model", "llm_base_url", "llm_reasoning_effort",
+        "llm_thinking_enabled", "eval_vision_provider", "eval_vision_model",
+        "eval_vision_base_url", "eval_vision_thinking_enabled",
+    })
     migrated = migrate_workspace_layout()
     if migrated:
         print(f"[startup] Migrated {migrated} workspaces to canonical ASCII names")

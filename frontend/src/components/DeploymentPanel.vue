@@ -60,7 +60,31 @@ function statusLabel(status: Deployment["status"]) { return { publishing: "正�
 function formatTime(value: string) { return new Date(value).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }); }
 function formatFullTime(value: string) { return new Date(value).toLocaleString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }); }
 async function load() { loading.value = true; try { deployments.value = await listDeployments(props.projectId); } catch { ElMessage.error("无法读取发布记录，请稍后刷新"); } finally { loading.value = false; } }
-async function copyUrl(url: string) { try { await navigator.clipboard.writeText(url); ElMessage.success("公开链接已复制"); } catch { ElMessage.warning("复制失败，请手动复制链接"); } }
+async function copyUrl(url: string) {
+  try {
+    if (navigator.clipboard?.writeText && window.isSecureContext) {
+      try {
+        await navigator.clipboard.writeText(url);
+        ElMessage.success("公开链接已复制");
+        return;
+      } catch {
+        // 受限 iframe、浏览器权限或企业策略会拒绝原生 API，继续尝试兼容方案。
+      }
+    }
+    const textarea = document.createElement("textarea");
+    textarea.value = url;
+    textarea.setAttribute("readonly", "");
+    textarea.style.cssText = "position:fixed;opacity:0;pointer-events:none";
+    document.body.appendChild(textarea);
+    textarea.select();
+    const copied = document.execCommand("copy");
+    textarea.remove();
+    if (!copied) throw new Error("copy command was rejected");
+    ElMessage.success("公开链接已复制");
+  } catch {
+    ElMessage.warning("复制失败，请手动复制链接");
+  }
+}
 async function confirmPublish() {
   try {
     await ElMessageBox.confirm("将从当前成功构建创建一个新的公开发布版本。已有发布链接不会受到影响。", "确认发布当前构建", { confirmButtonText: "确认发布", cancelButtonText: "暂不发布", type: "info", closeOnClickModal: false });

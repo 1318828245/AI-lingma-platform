@@ -86,6 +86,21 @@ def admin_overview(admin: User = Depends(require_admin), db: Session = Depends(g
 class AdminSettingsIn(BaseModel):
     register_enabled: bool | None = None
     default_user_quota: int | None = Field(default=None, ge=0, le=100000)
+    build_mode: str | None = Field(default=None, pattern="^(mock|real)$")
+    command_mode: str | None = Field(default=None, pattern="^(sandbox|docker)$")
+    generation_concurrency: int | None = Field(default=None, ge=1, le=16)
+    modification_concurrency: int | None = Field(default=None, ge=1, le=32)
+    task_timeout_seconds: int | None = Field(default=None, ge=30, le=7200)
+    max_requirement_length: int | None = Field(default=None, ge=100, le=50000)
+    agent_max_iterations: int | None = Field(default=None, ge=1, le=200)
+    llm_model: str | None = Field(default=None, min_length=1, max_length=120)
+    llm_base_url: str | None = Field(default=None, max_length=500)
+    llm_reasoning_effort: str | None = Field(default=None, pattern="^(low|medium|high)$")
+    llm_thinking_enabled: bool | None = None
+    eval_vision_provider: str | None = Field(default=None, pattern="^(disabled|qwen_compatible)$")
+    eval_vision_model: str | None = Field(default=None, min_length=1, max_length=120)
+    eval_vision_base_url: str | None = Field(default=None, max_length=500)
+    eval_vision_thinking_enabled: bool | None = None
 
 
 class AdminSettingsOut(BaseModel):
@@ -93,23 +108,56 @@ class AdminSettingsOut(BaseModel):
     environment: str
     register_enabled: bool
     default_user_quota: int
+    build_mode: str
+    command_mode: str
+    generation_concurrency: int
+    modification_concurrency: int
+    task_timeout_seconds: int
+    max_requirement_length: int
+    agent_max_iterations: int
+    llm_model: str
+    llm_base_url: str
+    llm_reasoning_effort: str
+    llm_thinking_enabled: bool
+    llm_api_key_configured: bool
+    eval_vision_provider: str
+    eval_vision_model: str
+    eval_vision_base_url: str
+    eval_vision_thinking_enabled: bool
+    eval_vision_api_key_configured: bool
+
+
+def _admin_settings_out() -> AdminSettingsOut:
+    settings = get_settings()
+    return AdminSettingsOut(
+        app_name=settings.app_name, environment=settings.environment,
+        register_enabled=bool(settings_store.get("register_enabled", settings.register_enabled)),
+        default_user_quota=int(settings_store.get("default_user_quota", settings.default_user_quota)),
+        build_mode=str(settings_store.get("build_mode", settings.build_mode)),
+        command_mode=str(settings_store.get("command_mode", settings.command_mode)),
+        generation_concurrency=int(settings_store.get("generation_concurrency", settings.generation_concurrency)),
+        modification_concurrency=int(settings_store.get("modification_concurrency", settings.modification_concurrency)),
+        task_timeout_seconds=int(settings_store.get("task_timeout_seconds", settings.task_timeout_seconds)),
+        max_requirement_length=int(settings_store.get("max_requirement_length", settings.max_requirement_length)),
+        agent_max_iterations=int(settings_store.get("agent_max_iterations", settings.agent_max_iterations)),
+        llm_model=str(settings_store.get("llm_model", settings.llm_model)),
+        llm_base_url=str(settings_store.get("llm_base_url", settings.llm_base_url)),
+        llm_reasoning_effort=str(settings_store.get("llm_reasoning_effort", settings.llm_reasoning_effort)),
+        llm_thinking_enabled=bool(settings_store.get("llm_thinking_enabled", settings.llm_thinking_enabled)),
+        llm_api_key_configured=bool(settings.llm_api_key),
+        eval_vision_provider=str(settings_store.get("eval_vision_provider", settings.eval_vision_provider)),
+        eval_vision_model=str(settings_store.get("eval_vision_model", settings.eval_vision_model)),
+        eval_vision_base_url=str(settings_store.get("eval_vision_base_url", settings.eval_vision_base_url)),
+        eval_vision_thinking_enabled=bool(settings_store.get("eval_vision_thinking_enabled", settings.eval_vision_thinking_enabled)),
+        eval_vision_api_key_configured=bool(settings.eval_vision_api_key),
+    )
 
 
 @router.get("/settings", response_model=AdminSettingsOut)
 def get_settings_admin(
     admin: User = Depends(require_admin),
 ):
-    settings = get_settings()
-    return AdminSettingsOut(
-        app_name=settings.app_name,
-        environment=settings.environment,
-        register_enabled=bool(
-            settings_store.get("register_enabled", settings.register_enabled)
-        ),
-        default_user_quota=int(
-            settings_store.get("default_user_quota", settings.default_user_quota)
-        ),
-    )
+    return _admin_settings_out()
 
 
 @router.put("/settings", response_model=AdminSettingsOut)
@@ -119,22 +167,14 @@ def update_settings_admin(
     db: Session = Depends(get_db),
 ):
     data = payload.model_dump(exclude_unset=True)
+    settings = get_settings()
     for key, value in data.items():
         settings_store.set(key, value)
+        setattr(settings, key, value)
     if data:
         record_audit(db, actor_id=admin.id, action="settings.updated", target_type="settings", target_id="platform", detail=data)
         db.commit()
-    settings = get_settings()
-    return AdminSettingsOut(
-        app_name=settings.app_name,
-        environment=settings.environment,
-        register_enabled=bool(
-            settings_store.get("register_enabled", settings.register_enabled)
-        ),
-        default_user_quota=int(
-            settings_store.get("default_user_quota", settings.default_user_quota)
-        ),
-    )
+    return _admin_settings_out()
 
 
 @router.get("/users", response_model=list[UserOut])

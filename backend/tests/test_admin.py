@@ -69,15 +69,17 @@ def test_admin_settings_roundtrip(client, admin_headers):
     resp = client.get("/api/admin/settings", headers=admin_headers)
     assert resp.status_code == 200
     assert resp.json()["register_enabled"] is False
+    assert {"llm_model", "llm_api_key_configured", "eval_vision_provider", "eval_vision_api_key_configured"} <= set(resp.json())
 
     resp = client.put(
         "/api/admin/settings",
         headers=admin_headers,
-        json={"register_enabled": True, "default_user_quota": 30},
+        json={"register_enabled": True, "default_user_quota": 30, "llm_model": "mock", "llm_reasoning_effort": "high", "eval_vision_provider": "disabled"},
     )
     assert resp.status_code == 200
     assert resp.json()["register_enabled"] is True
     assert resp.json()["default_user_quota"] == 30
+    assert resp.json()["llm_model"] == "mock"
 
     # 打开注册后可以注册
     resp = client.post(
