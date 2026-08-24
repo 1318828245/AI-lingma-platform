@@ -10,11 +10,12 @@ from app.models.modification import Modification
 from app.models.template import Template
 from app.models.user import User
 from app.schemas.project import ProjectCreate, ProjectOut, ProjectUpdate
-from app.services.project import create_project, delete_project, get_owned_project, project_workspace
+from app.services.project import create_project, delete_project, get_owned_project, project_thumbnail_path, project_workspace
 from app.services.assets import asset_job_wire, list_asset_jobs, list_project_assets, run_asset_job, select_asset_candidate
 from app.models.asset import AssetJob
 from app.services.evaluation import apply_visual_evaluation, evaluate_delivery, evaluation_wire, latest_project_evaluation
 from app.services.task_manager import get_asset_task_manager
+from app.services.sandbox import validate_build
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -81,6 +82,20 @@ def project_evaluation(
     get_owned_project(db, project_id, user.id)
     row = latest_project_evaluation(db, project_id)
     return {"evaluation": evaluation_wire(row) if row else None}
+
+
+@router.post("/{project_id}/rebuild")
+async def rebuild_project_preview(
+    project_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Rebuild source files into the preview delivery without invoking an Agent."""
+    project = get_owned_project(db, project_id, user.id)
+    ok, log, errors = await validate_build(project_workspace(project), project.tech_stack)
+    if ok:
+        project_thumbnail_path(project).unlink(missing_ok=True)
+    return {"ok": ok, "log": log[-100:], "errors": errors[-20:]}
 
 
 @router.post("/{project_id}/evaluation/refresh")

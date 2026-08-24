@@ -8,13 +8,13 @@
         <span class="eyebrow">AI · Lingma Studio</span>
         <span class="name wordmark">{{ project?.name || "实时预览" }}</span>
       </div>
-      <button class="ghost" @click="$router.push('/')">项目列表</button>
+      <div class="actions"><button class="ghost" :disabled="rebuilding" @click="rebuild">{{ rebuilding ? "正在构建…" : "重新构建" }}</button><button class="ghost" @click="$router.push('/')">项目列表</button></div>
     </header>
     <div class="body">
       <LivePreviewPanel
         :project-id="projectId"
         stage="done"
-        :refresh-token="0"
+        :refresh-token="refreshToken"
       />
     </div>
   </div>
@@ -22,14 +22,34 @@
 
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
+import { ElMessage } from "element-plus";
 import { useRoute } from "vue-router";
 import LivePreviewPanel from "../components/LivePreviewPanel.vue";
-import { getProject } from "../api/projects";
+import { getProject, rebuildProjectPreview } from "../api/projects";
 import type { Project } from "../types";
 
 const route = useRoute();
 const projectId = Number(route.params.id);
 const project = ref<Project | null>(null);
+const rebuilding = ref(false);
+const refreshToken = ref(0);
+
+async function rebuild() {
+  rebuilding.value = true;
+  try {
+    const result = await rebuildProjectPreview(projectId);
+    if (!result.ok) {
+      ElMessage.error(result.errors[0] || "构建失败，请查看项目源码后重试");
+      return;
+    }
+    refreshToken.value += 1;
+    ElMessage.success("构建完成，预览已刷新");
+  } catch (error: any) {
+    ElMessage.error(error.response?.data?.detail || "重新构建失败");
+  } finally {
+    rebuilding.value = false;
+  }
+}
 
 onMounted(async () => {
   project.value = await getProject(projectId);
@@ -94,6 +114,8 @@ onMounted(async () => {
   border-color: var(--primary);
   background: var(--primary-soft);
 }
+.actions { display: flex; gap: 8px; }
+.ghost:disabled { opacity: .6; cursor: wait; }
 .body {
   flex: 1;
   min-height: 0;

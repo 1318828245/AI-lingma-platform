@@ -60,6 +60,11 @@ export async function getPreviewStatus(id: number): Promise<PreviewStatus> {
   return data;
 }
 
+export async function rebuildProjectPreview(id: number) {
+  const { data } = await api.post(`/projects/${id}/rebuild`);
+  return data as { ok: boolean; log: string[]; errors: string[] };
+}
+
 export interface QualityEvaluation {
   id: number; score: number; pass: boolean; created_at?: string | null;
   dimensions: Record<string, { label: string; score: number; detail: string }>;

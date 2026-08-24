@@ -36,6 +36,13 @@ def test_preview_status_and_static_serve(client, admin_headers):
     assert "body" in css.text
 
 
+def test_project_preview_can_be_rebuilt(client, admin_headers):
+    project = _create_project(client, admin_headers, "重新构建预览", template="个人名片页", tech_stack="html")
+    response = client.post(f"/api/projects/{project['id']}/rebuild", headers=admin_headers)
+    assert response.status_code == 200, response.text
+    assert response.json()["ok"] is True
+
+
 def test_preview_requires_valid_token(client, admin_headers, user_headers):
     project = _create_project(
         client, admin_headers, "预览权限", template="个人名片页", tech_stack="html"
