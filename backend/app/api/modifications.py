@@ -99,6 +99,24 @@ def cancel_modification(modification_id: int, user: User = Depends(get_current_u
     return {"ok": True, "status": modification.status}
 
 
+@router.post("/api/modifications/{modification_id}/resume", response_model=ModificationOut)
+async def resume_modification(
+    modification_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    modification = _get_owned_modification(db, modification_id, user.id)
+    if modification.status not in {"paused_budget", "needs_review"}:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=409, detail="当前修改任务不能继续执行")
+    modification.status = "pending"
+    modification.finished_at = None
+    db.commit()
+    db.refresh(modification)
+    await get_task_manager().enqueue(partial(run_modification_task, modification.id))
+    return _mod_out(modification)
+
+
 @router.get("/api/modifications/{modification_id}/events")
 async def modification_events(
     modification_id: int,

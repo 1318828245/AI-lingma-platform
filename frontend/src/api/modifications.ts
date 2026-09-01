@@ -35,3 +35,8 @@ export async function cancelModification(id: number) {
   const { data } = await api.post(`/modifications/${id}/cancel`);
   return data;
 }
+
+export async function resumeModification(id: number): Promise<Modification> {
+  const { data } = await api.post(`/modifications/${id}/resume`);
+  return data;
+}

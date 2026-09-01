@@ -12,6 +12,7 @@ from app.services.task_manager import get_task_manager
 from app.services.task_manager import get_asset_task_manager
 from app.services.assets import pending_asset_job_ids, run_asset_job
 from app.services.settings_store import settings_store
+from app.services.graph_checkpoint import start_graph_checkpointing, stop_graph_checkpointing
 from functools import partial
 
 
@@ -21,7 +22,7 @@ async def lifespan(app: FastAPI):
     settings_store.apply(get_settings(), {
         "register_enabled", "default_user_quota", "build_mode", "command_mode",
         "generation_concurrency", "modification_concurrency", "task_timeout_seconds",
-        "max_requirement_length", "agent_max_iterations", "llm_model", "llm_base_url", "llm_reasoning_effort",
+        "max_requirement_length", "agent_max_iterations", "agent_max_model_steps", "agent_max_tool_calls", "agent_soft_limit_ratio", "agent_max_no_progress_steps", "llm_model", "llm_base_url", "llm_reasoning_effort",
         "llm_thinking_enabled", "eval_vision_provider", "eval_vision_model",
         "eval_vision_base_url", "eval_vision_thinking_enabled",
     })
@@ -31,6 +32,7 @@ async def lifespan(app: FastAPI):
     recovered = recover_interrupted_tasks()
     if recovered:
         print(f"[startup] 将 {recovered} 个遗留生成任务标记为 interrupted")
+    await start_graph_checkpointing()
     await get_task_manager().start()
     asset_manager = get_asset_task_manager()
     await asset_manager.start()
@@ -39,6 +41,7 @@ async def lifespan(app: FastAPI):
     yield
     await asset_manager.stop()
     await get_task_manager().stop()
+    await stop_graph_checkpointing()
 
 
 def create_app() -> FastAPI:

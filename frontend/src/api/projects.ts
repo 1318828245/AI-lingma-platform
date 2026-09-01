@@ -93,6 +93,29 @@ export async function listMessages(sessionId: number) {
   return data;
 }
 
+export interface AgentContextSnapshot {
+  id: number;
+  kind: "generation" | "modification";
+  created_at: string;
+  char_count: number;
+  payload_json: {
+    selected_element?: Record<string, unknown>;
+    candidate_files?: string[];
+    session_summary?: string;
+    project_summary?: string;
+    recent_messages?: Array<{ role: string; content: string }>;
+  };
+}
+
+export async function listAgentContexts(sessionId: number): Promise<AgentContextSnapshot[]> {
+  const { data } = await api.get(`/sessions/${sessionId}/agent-contexts`);
+  return data;
+}
+
+export async function clearAgentContexts(sessionId: number) {
+  await api.delete(`/sessions/${sessionId}/agent-contexts`);
+}
+
 export async function listAssetJobs(projectId: number, offset = 0, limit = 5) {
   const { data } = await api.get(`/projects/${projectId}/asset-jobs`, { params: { offset, limit } });
   return data as { jobs: AssetJob[]; total: number; next_offset: number | null };

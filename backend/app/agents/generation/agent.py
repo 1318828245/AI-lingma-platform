@@ -15,6 +15,7 @@ from app.agents.generation.nodes import (
     _output_guardrail_check,
 )
 from app.agents.generation.state import GenerationState
+from app.agents.budget import AgentBudgetPaused, AgentNeedsReview, get_agent_budget
 from app.agents.tooling.contracts import ToolCall, ToolResult
 from app.agents.tooling.definitions import GENERATION_TOOL_NAMES, tool_schemas
 from app.agents.tooling.executor import ToolExecutionContext, execute_tool, is_unsupported_preview_command
@@ -24,6 +25,7 @@ from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.prompts import render_prompt
 from app.services.chat_log import save_generation_event, save_message
+from app.services.agent_context import render_context_for_agent
 from app.services.events import get_broker
 from app.services.llm import LLMClient
 from app.services.sandbox import BuildError, run_command
@@ -139,7 +141,17 @@ def _build_system_prompt(state: GenerationState) -> str:
 
 
 def _build_user_prompt(state: GenerationState) -> str:
-    return state["requirement"]
+    task = state.get("current_task")
+    task_prompt = ""
+    if task:
+        task_prompt = (
+            "\n\n[CURRENT IMPLEMENTATION TASK]\n"
+            f"Title: {task.get('title', '')}\n"
+            f"Detail: {task.get('detail', '')}\n"
+            "Complete this task only. Preserve prior completed work; call finish when this task is done.\n"
+            "[END CURRENT IMPLEMENTATION TASK]"
+        )
+    return state["requirement"] + task_prompt + render_context_for_agent(state.get("context_package", {}))
 
 
 async def _emit(state: GenerationState, event: dict) -> None:
@@ -232,7 +244,9 @@ async def _execute_tool(state: GenerationState, name: str, args: dict) -> str:
 
 
 async def run_generation_agent(
-    state: GenerationState, max_iterations: int | None = None
+    state: GenerationState,
+    max_iterations: int | None = None,
+    max_tool_calls: int | None = None,
 ) -> dict:
     settings = get_settings()
     llm = LLMClient()
@@ -245,7 +259,12 @@ async def run_generation_agent(
     ]
     token_usage = {"prompt_tokens": 0, "completion_tokens": 0}
     summary = ""
-    max_iterations = max_iterations or settings.agent_max_iterations
+    budget = get_agent_budget()
+    max_iterations = max_iterations or budget.max_model_steps
+    max_tool_calls = max_tool_calls or budget.max_tool_calls
+    tool_calls_used = 0
+    no_progress_steps = 0
+    soft_limit_announced = False
 
     for step in range(max_iterations):
         _check_cancel(state)
@@ -261,6 +280,9 @@ async def run_generation_agent(
             on_reasoning=on_reasoning,
             on_content=on_content,
         )
+        if not soft_limit_announced and step + 1 >= max(1, int(max_iterations * budget.soft_limit_ratio)):
+            soft_limit_announced = True
+            await _emit(state, {"type": "budget_warning", "kind": "model_steps", "used": step + 1, "limit": max_iterations})
         reasoning = (message.get("reasoning_content") or "").strip()
         if reasoning:
             save_message(state["session_id"], "think", reasoning)
@@ -306,6 +328,9 @@ async def run_generation_agent(
                     "content": "Continue the required workflow: use tools to complete the work or call finish(summary).",
                 }
             )
+            no_progress_steps += 1
+            if no_progress_steps >= budget.max_no_progress_steps:
+                raise AgentNeedsReview("连续模型决策未产生可执行工具调用，请补充需求或检查任务计划")
             continue
 
         assistant_msg = {
@@ -314,6 +339,15 @@ async def run_generation_agent(
             "tool_calls": tool_calls,
         }
         messages.append(assistant_msg)
+
+        executable_calls = [
+            raw for raw in tool_calls
+            if ToolCall.from_wire(raw, "budget_check").name != "finish"
+        ]
+        if tool_calls_used + len(executable_calls) > max_tool_calls:
+            raise AgentBudgetPaused(
+                f"工具调用达到上限（{max_tool_calls}）；当前进度已保存，可继续执行"
+            )
 
         for tool_index, tool_call in enumerate(tool_calls):
             call = ToolCall.from_wire(tool_call, f"call_{step}_{tool_index}")
@@ -339,6 +373,7 @@ async def run_generation_agent(
                     "token_usage": token_usage,
                 }
 
+            tool_calls_used += 1
             try:
                 await _emit(
                     state,
@@ -390,8 +425,16 @@ async def run_generation_agent(
                     "content": result[:4000],
                 }
             )
-    raise GenerationFailed(
-        f"生成未在 {max_iterations} 轮工具调用内完成，已停止避免无限循环"
+            if execution.ok and name in {"write_file", "write_files", "edit_file", "collect_assets"}:
+                no_progress_steps = 0
+            else:
+                no_progress_steps += 1
+            if no_progress_steps >= budget.max_no_progress_steps:
+                raise AgentNeedsReview(
+                    f"连续 {no_progress_steps} 次工具调用未产生文件或素材进展，请人工确认后继续"
+                )
+    raise AgentBudgetPaused(
+        f"已使用完 {max_iterations} 个模型决策轮次；当前进度已保存，可继续执行"
     )
 
 

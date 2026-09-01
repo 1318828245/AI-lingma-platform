@@ -7,6 +7,7 @@ class ModificationState(TypedDict, total=False):
     session_id: int
     workspace: str
     instruction: str
+    context_package: dict
     element_snapshot: dict
     related_files: list[str]
     changed_files: list[str]

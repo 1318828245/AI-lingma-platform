@@ -1,9 +1,12 @@
 from app.models.audit import AuditLog
+from app.models.agent_context import AgentContextSnapshot
+from app.models.agent_memory import AgentMemory
 from app.models.deployment import Deployment
 from app.models.evaluation import Evaluation
 from app.models.file import File
 from app.models.file_version import FileVersion
 from app.models.generation import Generation
+from app.models.generation_task import GenerationTask
 from app.models.guardrail import GuardrailEvent
 from app.models.message import Message
 from app.models.metric import DailyStat, Metric
@@ -17,6 +20,8 @@ from app.models.user import User
 
 __all__ = [
     "AssetJob",
+    "AgentContextSnapshot",
+    "AgentMemory",
     "AuditLog",
     "DailyStat",
     "Deployment",
@@ -24,6 +29,7 @@ __all__ = [
     "File",
     "FileVersion",
     "Generation",
+    "GenerationTask",
     "GuardrailEvent",
     "Message",
     "Metric",

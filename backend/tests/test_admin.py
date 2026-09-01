@@ -70,6 +70,7 @@ def test_admin_settings_roundtrip(client, admin_headers):
     assert resp.status_code == 200
     assert resp.json()["register_enabled"] is False
     assert {"llm_model", "llm_api_key_configured", "eval_vision_provider", "eval_vision_api_key_configured"} <= set(resp.json())
+    assert {"agent_max_model_steps", "agent_max_tool_calls"} <= set(resp.json())
 
     resp = client.put(
         "/api/admin/settings",
@@ -80,6 +81,13 @@ def test_admin_settings_roundtrip(client, admin_headers):
     assert resp.json()["register_enabled"] is True
     assert resp.json()["default_user_quota"] == 30
     assert resp.json()["llm_model"] == "mock"
+
+    # The UI submits the complete GET payload. The default development command
+    # mode is shell, so this must remain a valid round-trip value.
+    full_payload = client.get("/api/admin/settings", headers=admin_headers).json()
+    resp = client.put("/api/admin/settings", headers=admin_headers, json=full_payload)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["command_mode"] == "shell"
 
     # 打开注册后可以注册
     resp = client.post(

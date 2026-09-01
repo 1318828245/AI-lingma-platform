@@ -44,6 +44,11 @@ export async function cancelGeneration(id: number) {
   return data;
 }
 
+export async function resumeGeneration(id: number): Promise<Generation> {
+  const { data } = await api.post(`/generations/${id}/resume`);
+  return data;
+}
+
 export function generationEventUrl(id: number): string {
   const auth = useAuthStore();
   return `/api/generations/${id}/events?token=${encodeURIComponent(auth.accessToken)}`;

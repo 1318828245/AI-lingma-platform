@@ -10,10 +10,12 @@ class GenerationState(TypedDict, total=False):
     user_id: int
     workspace: str
     requirement: str
+    context_package: dict[str, Any]
     tech_stack: str
     llm_model: str
     parsed_requirement: dict[str, Any]
     plan: list[dict[str, str]]
+    current_task: dict[str, str]
     files: list[str]
     guardrails: list[dict[str, Any]]
     build_log: list[str]

@@ -87,12 +87,16 @@ class AdminSettingsIn(BaseModel):
     register_enabled: bool | None = None
     default_user_quota: int | None = Field(default=None, ge=0, le=100000)
     build_mode: str | None = Field(default=None, pattern="^(mock|real)$")
-    command_mode: str | None = Field(default=None, pattern="^(sandbox|docker)$")
+    command_mode: str | None = Field(default=None, pattern="^(shell|sandbox|docker)$")
     generation_concurrency: int | None = Field(default=None, ge=1, le=16)
     modification_concurrency: int | None = Field(default=None, ge=1, le=32)
     task_timeout_seconds: int | None = Field(default=None, ge=30, le=7200)
     max_requirement_length: int | None = Field(default=None, ge=100, le=50000)
     agent_max_iterations: int | None = Field(default=None, ge=1, le=200)
+    agent_max_model_steps: int | None = Field(default=None, ge=1, le=500)
+    agent_max_tool_calls: int | None = Field(default=None, ge=1, le=2000)
+    agent_soft_limit_ratio: float | None = Field(default=None, ge=0.5, le=0.95)
+    agent_max_no_progress_steps: int | None = Field(default=None, ge=2, le=50)
     llm_model: str | None = Field(default=None, min_length=1, max_length=120)
     llm_base_url: str | None = Field(default=None, max_length=500)
     llm_reasoning_effort: str | None = Field(default=None, pattern="^(low|medium|high)$")
@@ -115,6 +119,10 @@ class AdminSettingsOut(BaseModel):
     task_timeout_seconds: int
     max_requirement_length: int
     agent_max_iterations: int
+    agent_max_model_steps: int
+    agent_max_tool_calls: int
+    agent_soft_limit_ratio: float
+    agent_max_no_progress_steps: int
     llm_model: str
     llm_base_url: str
     llm_reasoning_effort: str
@@ -140,6 +148,10 @@ def _admin_settings_out() -> AdminSettingsOut:
         task_timeout_seconds=int(settings_store.get("task_timeout_seconds", settings.task_timeout_seconds)),
         max_requirement_length=int(settings_store.get("max_requirement_length", settings.max_requirement_length)),
         agent_max_iterations=int(settings_store.get("agent_max_iterations", settings.agent_max_iterations)),
+        agent_max_model_steps=int(settings_store.get("agent_max_model_steps", settings_store.get("agent_max_iterations", settings.agent_max_iterations))),
+        agent_max_tool_calls=int(settings_store.get("agent_max_tool_calls", settings.agent_max_tool_calls)),
+        agent_soft_limit_ratio=float(settings_store.get("agent_soft_limit_ratio", settings.agent_soft_limit_ratio)),
+        agent_max_no_progress_steps=int(settings_store.get("agent_max_no_progress_steps", settings.agent_max_no_progress_steps)),
         llm_model=str(settings_store.get("llm_model", settings.llm_model)),
         llm_base_url=str(settings_store.get("llm_base_url", settings.llm_base_url)),
         llm_reasoning_effort=str(settings_store.get("llm_reasoning_effort", settings.llm_reasoning_effort)),

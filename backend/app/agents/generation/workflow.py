@@ -16,6 +16,7 @@ from app.agents.generation.nodes import (
     validate_build,
 )
 from app.agents.generation.state import GenerationState
+from app.services.graph_checkpoint import get_generation_checkpointer
 
 
 def _route_after_build(state: GenerationState) -> str:
@@ -53,5 +54,8 @@ _compiled_graph = None
 async def run_generation_workflow(state: GenerationState) -> GenerationState:
     global _compiled_graph
     if _compiled_graph is None:
-        _compiled_graph = build_generation_graph().compile()
-    return await _compiled_graph.ainvoke(state)
+        _compiled_graph = build_generation_graph().compile(
+            checkpointer=get_generation_checkpointer()
+        )
+    config = {"configurable": {"thread_id": f"generation:{state['generation_id']}"}}
+    return await _compiled_graph.ainvoke(state, config=config)

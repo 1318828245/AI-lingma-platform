@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.deps import get_current_user, get_current_user_sse, get_db
 from app.models.generation import Generation
+from app.models.generation_task import GenerationTask
 from app.models.evaluation import Evaluation
 from app.models.user import User
 from app.schemas.generation import (
@@ -17,6 +18,7 @@ from app.schemas.generation import (
     StackAdviceIn,
     StackAdviceOut,
 )
+from app.schemas.generation_task import GenerationTaskOut
 from app.services.events import get_broker
 from app.services.generation import (
     create_generation,
@@ -93,6 +95,21 @@ def get_generation(
     db: Session = Depends(get_db),
 ):
     return _gen_out(get_generation_for_user(db, generation_id, user.id))
+
+
+@router.get("/api/generations/{generation_id}/tasks", response_model=list[GenerationTaskOut])
+def get_generation_tasks(
+    generation_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    get_generation_for_user(db, generation_id, user.id)
+    return (
+        db.query(GenerationTask)
+        .filter(GenerationTask.generation_id == generation_id)
+        .order_by(GenerationTask.sequence_no.asc())
+        .all()
+    )
 
 
 @router.get("/api/projects/{project_id}/generations/active", response_model=GenerationOut | None)
@@ -174,6 +191,24 @@ def cancel_generation(
     gen.cancel_requested = True
     db.commit()
     return {"ok": True, "status": "cancelling"}
+
+
+@router.post("/api/generations/{generation_id}/resume", response_model=GenerationOut)
+async def resume_generation(
+    generation_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    gen = get_generation_for_user(db, generation_id, user.id)
+    if gen.status not in {"paused_budget", "needs_review", "interrupted"}:
+        raise HTTPException(status_code=409, detail="当前任务不能继续执行")
+    gen.status = "pending"
+    gen.error = None
+    gen.finished_at = None
+    db.commit()
+    db.refresh(gen)
+    await get_task_manager().enqueue(_make_task(gen.id), on_timeout=_make_timeout(gen.id))
+    return _gen_out(gen)
 
 
 @router.post("/api/generations/{generation_id}/message", response_model=GenerationOut)

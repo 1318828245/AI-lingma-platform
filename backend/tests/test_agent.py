@@ -212,7 +212,7 @@ def test_agent_guardrail_blocks_dangerous_write(
     with pytest.raises(Exception) as exc:
         # 假 LLM 只返回一个危险写入，没有 finish → 轮次耗尽抛 GenerationFailed
         asyncio.run(run_generation_agent(state, max_iterations=1))
-    assert "生成未在" in str(exc.value)
+    assert "当前进度已保存" in str(exc.value)
 
     ws = project_workspace(project["id"])
     assert not (ws / "evil.sh").exists()
@@ -242,7 +242,26 @@ def test_agent_max_iterations(client, admin_headers, monkeypatch):
     monkeypatch.setattr(LLMClient, "stream_complete_with_tools", fake_complete)
     with pytest.raises(Exception) as exc:
         asyncio.run(run_generation_agent(state, max_iterations=2))
-    assert "2 轮" in str(exc.value)
+    assert "2 个模型决策轮次" in str(exc.value)
+
+
+def test_agent_stops_before_exceeding_tool_call_budget(client, admin_headers, monkeypatch):
+    project = client.post(
+        "/api/projects", headers=admin_headers,
+        json={"name": "Agent工具预算", "template": "blank", "tech_stack": "html"},
+    ).json()
+    me = client.get("/api/users/me", headers=admin_headers).json()
+    session = client.get("/api/sessions", headers=admin_headers, params={"project_id": project["id"]}).json()[0]
+    state = _make_state(project["id"], me["id"], session["id"])
+
+    async def fake_complete(self, messages, tools, on_reasoning=None, on_content=None, temperature=0.2):
+        call = lambda call_id: {"id": call_id, "type": "function", "function": {"name": "list_files", "arguments": "{}"}}
+        return {"content": "", "tool_calls": [call("one"), call("two")], "usage": {}}
+
+    monkeypatch.setattr(LLMClient, "stream_complete_with_tools", fake_complete)
+    with pytest.raises(Exception) as exc:
+        asyncio.run(run_generation_agent(state, max_iterations=2, max_tool_calls=1))
+    assert "工具调用达到上限（1）" in str(exc.value)
 
 
 def test_agent_run_command_string_normalized(client, admin_headers, monkeypatch):

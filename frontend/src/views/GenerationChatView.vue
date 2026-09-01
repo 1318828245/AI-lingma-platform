@@ -50,6 +50,13 @@
           />
         </section>
 
+        <section
+          v-if="(runningGen && ['paused_budget', 'needs_review', 'interrupted'].includes(runningGen.status)) || (runningModification && ['paused_budget', 'needs_review'].includes(runningModification.status))"
+          class="panel budget-paused-card"
+        >
+          <span>任务已暂停，可在保留当前工作区的基础上继续执行。</span>
+          <button type="button" @click="resumePausedTask">继续执行</button>
+        </section>
         <section class="panel chat-card">
           <div v-if="taskWaitingText" class="generation-status-beacon" role="status">
             <span class="generation-status-spinner" aria-hidden="true" />
@@ -385,6 +392,13 @@
           :refresh-token="previewRefresh"
           @rollback="onModificationCompleted"
         />
+        <details v-if="latestAgentContext" class="panel memory-card">
+          <summary>本轮 Agent 上下文 <span>{{ latestAgentContext.kind === 'modification' ? '修改' : '生成' }}</span></summary>
+          <p v-if="latestAgentContext.payload_json.selected_element && Object.keys(latestAgentContext.payload_json.selected_element).length">已选元素：{{ String(latestAgentContext.payload_json.selected_element.text || latestAgentContext.payload_json.selected_element.tagName || '元素快照') }}</p>
+          <p v-if="latestAgentContext.payload_json.candidate_files?.length">候选文件：{{ latestAgentContext.payload_json.candidate_files.join('、') }}</p>
+          <p>会话摘要：{{ latestAgentContext.payload_json.session_summary || '本轮暂无历史摘要' }}</p>
+          <button type="button" class="memory-clear" @click="clearSessionMemory">清除本会话记忆</button>
+        </details>
         </section>
         <DeploymentPanel v-else key="deployment" class="deployment-workspace" :project-id="projectId" />
         </Transition>
@@ -413,17 +427,21 @@ import {
   getActiveGeneration,
   getGeneration,
   getStackAdvice,
+  resumeGeneration,
 } from "../api/generations";
 import {
   getProject,
   getProjectEvaluation,
   refreshProjectEvaluation,
   listMessages,
+  listAgentContexts,
+  clearAgentContexts,
   listSessions,
   updateProject,
 } from "../api/projects";
 import type { QualityEvaluation } from "../api/projects";
-import { createModification, getActiveModification, modificationEventUrl } from "../api/modifications";
+import type { AgentContextSnapshot } from "../api/projects";
+import { createModification, getActiveModification, modificationEventUrl, resumeModification } from "../api/modifications";
 import { acceptProjectVersion, undoProjectVersion } from "../api/versions";
 import type {
   ElementSnapshot,
@@ -484,6 +502,8 @@ const entries = ref<ChatEntry[]>([]);
 const runningGen = ref<Generation | null>(null);
 const runningModification = ref<Modification | null>(null);
 const activeSessionId = ref<number | undefined>();
+const agentContexts = ref<AgentContextSnapshot[]>([]);
+const latestAgentContext = computed(() => agentContexts.value[0]);
 // 未运行任务时不高亮任一阶段；避免重新进入已完成项目后误显示“解析中”。
 const progressStage = ref("idle");
 const submitting = ref(false);
@@ -800,6 +820,7 @@ onMounted(async () => {
   if (activeTaskSessionId || sessions.length) {
     activeSessionId.value = activeTaskSessionId || sessions[0].id;
     await reloadHistory();
+    await reloadAgentContexts();
   }
   if (activeGeneration) {
     runningGen.value = activeGeneration;
@@ -860,6 +881,18 @@ async function reloadHistory() {
   const history = (await listMessages(activeSessionId.value)) as Message[];
   seq = 0;
   entries.value = historyToEntries(history);
+}
+
+async function reloadAgentContexts() {
+  if (!activeSessionId.value) return;
+  agentContexts.value = await listAgentContexts(activeSessionId.value);
+}
+
+async function clearSessionMemory() {
+  if (!activeSessionId.value) return;
+  await clearAgentContexts(activeSessionId.value);
+  agentContexts.value = [];
+  ElMessage.success("已清除本会话的 Agent 上下文快照与摘要");
 }
 
 function recoverStageFromHistory() {
@@ -1190,7 +1223,7 @@ function watchModification(modificationId: number) {
     const summary = String(data.summary || "修改完成");
     push({ kind: "assistant", content: summary, collapsed: false });
     push({ kind: "modification-result", versionId: Number(data.version_id) || undefined, collapsed: false });
-    runningModification.value = null; modificationActive.value = false; modificationStage.value = "done"; modificationEventSource?.close(); onModificationCompleted(); void reloadHistory();
+    runningModification.value = null; modificationActive.value = false; modificationStage.value = "done"; modificationEventSource?.close(); onModificationCompleted(); void reloadHistory(); void reloadAgentContexts();
   });
   modificationEventSource.addEventListener("task_error", (event) => {
     const error = String(parse(event).error || "修改失败"); endStreaming(); push({ kind: "error", content: error }); improvementBaselineScore.value = null; runningModification.value = null; modificationActive.value = false; modificationStage.value = "done"; modificationEventSource?.close();
@@ -1201,6 +1234,7 @@ function watchModification(modificationId: number) {
     push({ kind: "assistant", content: question, collapsed: false });
     runningModification.value = null; modificationActive.value = false; modificationStage.value = "done"; modificationEventSource?.close();
     void reloadHistory();
+    void reloadAgentContexts();
   });
   modificationEventSource.addEventListener("cancelled", () => { push({ kind: "info", content: "已取消这次修改" }); runningModification.value = null; modificationActive.value = false; modificationStage.value = "done"; modificationEventSource?.close(); });
 }
@@ -1397,6 +1431,7 @@ function watchGeneration(genId: number) {
     previewRefresh.value += 1;
     refreshStatus(event.generation_id as number);
     void reloadHistory();
+    void reloadAgentContexts();
   });
 
   eventSource.addEventListener("error", (e) => {
@@ -1431,10 +1466,10 @@ async function refreshStatus(genId?: number) {
   if (!id) return;
   const gen = await getGeneration(id);
   runningGen.value = gen;
-  if (["succeeded", "failed", "cancelled", "timed_out"].includes(gen.status)) {
+  if (["succeeded", "failed", "cancelled", "timed_out", "paused_budget", "needs_review", "interrupted"].includes(gen.status)) {
     generationActive.value = false;
   }
-  if (["succeeded", "failed", "cancelled", "timed_out"].includes(gen.status)) {
+  if (["succeeded", "failed", "cancelled", "timed_out", "paused_budget", "needs_review", "interrupted"].includes(gen.status)) {
     eventSource?.close();
   }
 }
@@ -1443,6 +1478,28 @@ async function cancel() {
   if (!runningGen.value) return;
   await cancelGeneration(runningGen.value.id);
   ElMessage.info("已请求取消");
+}
+
+async function resumePausedTask() {
+  try {
+    if (runningGen.value && ["paused_budget", "needs_review", "interrupted"].includes(runningGen.value.status)) {
+      const generation = await resumeGeneration(runningGen.value.id);
+      runningGen.value = generation;
+      generationActive.value = true;
+      progressStage.value = "parse";
+      watchGeneration(generation.id);
+      return;
+    }
+    if (runningModification.value && ["paused_budget", "needs_review"].includes(runningModification.value.status)) {
+      const modification = await resumeModification(runningModification.value.id);
+      runningModification.value = modification;
+      modificationActive.value = true;
+      modificationStage.value = "locate";
+      watchModification(modification.id);
+    }
+  } catch (error: any) {
+    ElMessage.error(error.response?.data?.detail || "继续执行失败，请稍后重试");
+  }
 }
 
 async function renameProject() {
@@ -1642,6 +1699,11 @@ async function renameProject() {
   font-size: 11px;
   color: var(--faint);
 }
+.memory-card { margin-top: 10px; padding: 12px 16px; background: #fbfcff; }
+.memory-card summary { cursor: pointer; color: var(--primary-dark); font-size: 12px; font-weight: 650; }
+.memory-card summary span { margin-left: 6px; color: var(--muted); font-weight: 400; }
+.memory-card p { margin: 8px 0 0; color: var(--muted); font-size: 11px; line-height: 1.55; white-space: pre-line; }
+.memory-clear { margin-top: 9px; padding: 0; border: 0; background: transparent; color: #b04b56; font-size: 11px; cursor: pointer; }
 .modification-stage-rail {
   display: flex;
   align-items: center;

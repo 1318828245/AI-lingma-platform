@@ -46,6 +46,11 @@ def test_generation_html_end_to_end(client, admin_headers):
     assert done["status"] == "succeeded", done
     assert done["build_attempt"] == 1
 
+    tasks = client.get(f"/api/generations/{gen['id']}/tasks", headers=admin_headers)
+    assert tasks.status_code == 200, tasks.text
+    assert len(tasks.json()) >= 3
+    assert all(task["status"] == "pending" for task in tasks.json())
+
     # 工作区产生生成摘要与 AI 注入内容
     ws = project_workspace(project["id"])
     assert (ws / "ai-generation.json").exists()

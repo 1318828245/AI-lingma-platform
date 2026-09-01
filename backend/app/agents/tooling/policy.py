@@ -21,6 +21,10 @@ def validate_tool_call(agent: str, call: ToolCall) -> str | None:
             return "Asset kind must be icon, photo, or illustration"
         if not isinstance(query, str) or not query.strip() or len(query) > 180:
             return "Asset query must be a non-empty string of at most 180 characters"
+    if call.name in {"read_files", "write_files"}:
+        files = call.arguments.get("paths") if call.name == "read_files" else call.arguments.get("files")
+        if not isinstance(files, list) or not files or len(files) > 12:
+            return f"{call.name} accepts 1 to 12 entries"
     path = str(call.arguments.get("path") or "")
     if path:
         parts = set(path.replace("\\", "/").split("/"))

@@ -32,8 +32,10 @@ export async function offlineAdminDeployment(id: number) {
 
 export interface AdminSettings {
   app_name: string; environment: string; register_enabled: boolean; default_user_quota: number;
-  build_mode: "mock" | "real"; command_mode: "sandbox" | "docker";
-  generation_concurrency: number; modification_concurrency: number; task_timeout_seconds: number; max_requirement_length: number; agent_max_iterations: number;
+  build_mode: "mock" | "real"; command_mode: "shell" | "sandbox" | "docker";
+  generation_concurrency: number; modification_concurrency: number; task_timeout_seconds: number; max_requirement_length: number;
+  agent_max_iterations: number; agent_max_model_steps: number; agent_max_tool_calls: number;
+  agent_soft_limit_ratio: number; agent_max_no_progress_steps: number;
   llm_model: string; llm_base_url: string; llm_reasoning_effort: "low" | "medium" | "high"; llm_thinking_enabled: boolean; llm_api_key_configured: boolean;
   eval_vision_provider: "disabled" | "qwen_compatible"; eval_vision_model: string; eval_vision_base_url: string; eval_vision_thinking_enabled: boolean; eval_vision_api_key_configured: boolean;
 }

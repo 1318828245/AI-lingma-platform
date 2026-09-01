@@ -11,6 +11,7 @@ from app.agents.generation.nodes import (
     GenerationCancelled,
     GenerationFailed,
 )
+from app.agents.budget import AgentBudgetPaused, AgentNeedsReview
 from app.agents.generation.workflow import run_generation_workflow
 from app.core.config import get_settings
 from app.core.database import SessionLocal
@@ -21,6 +22,7 @@ from app.models.session import Session as ChatSession
 from app.services.events import get_broker
 from app.services.project import get_owned_project, project_workspace
 from app.services.task_manager import get_task_manager
+from app.services.agent_context import build_context_package, persist_context_snapshot
 
 
 def add_message(
@@ -149,6 +151,16 @@ def mark_timed_out(generation_id: int) -> None:
             db.commit()
 
 
+def mark_waiting_review(generation_id: int, status: str, reason: str) -> None:
+    with SessionLocal() as db:
+        gen = db.get(Generation, generation_id)
+        if gen is not None:
+            gen.status = status
+            gen.error = reason[:2000]
+            gen.finished_at = None
+            db.commit()
+
+
 def recover_interrupted_tasks() -> int:
     with SessionLocal() as db:
         rows = (
@@ -173,6 +185,18 @@ async def run_generation_task(generation_id: int) -> None:
                 return
             project = db.get(Project, gen.project_id)
             session = db.get(ChatSession, gen.session_id)
+            if project is None or session is None:
+                raise ValueError("项目或会话不存在")
+            context_package = build_context_package(
+                db, owner_id=session.user_id, project_id=gen.project_id,
+                session_id=gen.session_id, current_instruction=gen.requirement,
+            )
+            persist_context_snapshot(
+                db, owner_id=session.user_id, project_id=gen.project_id,
+                session_id=gen.session_id, generation_id=gen.id,
+                kind="generation", payload=context_package,
+            )
+            db.commit()
             state = {
                 "generation_id": gen.id,
                 "project_id": gen.project_id,
@@ -180,6 +204,7 @@ async def run_generation_task(generation_id: int) -> None:
                 "user_id": session.user_id if session else 0,
                 "workspace": str(project_workspace(project)),
                 "requirement": gen.requirement,
+                "context_package": context_package,
                 "tech_stack": project.tech_stack if project else "html",
                 "llm_model": gen.llm_model or get_settings().llm_model,
                 "parsed_requirement": {},
@@ -204,6 +229,12 @@ async def run_generation_task(generation_id: int) -> None:
         await broker.publish(
             generation_id, {"type": "cancelled", "generation_id": generation_id}
         )
+    except AgentBudgetPaused as exc:
+        mark_waiting_review(generation_id, "paused_budget", str(exc))
+        await broker.publish(generation_id, {"type": "paused", "status": "paused_budget", "reason": str(exc)})
+    except AgentNeedsReview as exc:
+        mark_waiting_review(generation_id, "needs_review", str(exc))
+        await broker.publish(generation_id, {"type": "paused", "status": "needs_review", "reason": str(exc)})
     except (GenerationBlocked, GenerationFailed) as exc:
         mark_failed(generation_id, str(exc))
         await broker.publish(

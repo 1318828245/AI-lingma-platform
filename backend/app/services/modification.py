@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.agents.tools import list_files, read_file
 from app.agents.modification.agent import run_modification_agent
+from app.agents.budget import AgentBudgetPaused, AgentNeedsReview
 from app.core.database import SessionLocal
 from app.models.message import Message
 from app.models.evaluation import Evaluation
@@ -22,6 +23,7 @@ from app.services.project import project_workspace, write_project_file
 from app.services.sandbox import validate_build
 from app.services.version import get_version, rollback_project, snapshot_project
 from app.services.llm import LLMClient
+from app.services.agent_context import build_context_package, persist_context_snapshot
 
 
 class ModificationCancelled(Exception):
@@ -214,17 +216,51 @@ async def run_modification_task(modification_id: int) -> None:
             )
             pre_edit_version_id = pre_edit_version.id
             db.commit()
+        # Persist the same auditable context in mock mode too, so the UI and
+        # support tooling reflect exactly what this modification was based on.
+        if LLMClient().mode != "real":
+            with SessionLocal() as db:
+                chat_session = db.get(ChatSession, session_id)
+                if chat_session is None:
+                    raise ValueError("Session does not exist")
+                context_package = build_context_package(
+                    db, owner_id=chat_session.user_id, project_id=project_id,
+                    session_id=session_id, current_instruction=instruction,
+                    element_snapshot=snapshot, related_files=related_files or [path],
+                )
+                persist_context_snapshot(
+                    db, owner_id=chat_session.user_id, project_id=project_id,
+                    session_id=session_id, modification_id=modification_id,
+                    kind="modification", payload=context_package,
+                )
+                db.commit()
         if LLMClient().mode == "real":
             before_files = {
                 candidate: read_file(workspace, candidate)
                 for candidate in _candidate_files(workspace, related_files)
             }
+            with SessionLocal() as db:
+                chat_session = db.get(ChatSession, session_id)
+                if chat_session is None:
+                    raise ValueError("会话不存在")
+                context_package = build_context_package(
+                    db, owner_id=chat_session.user_id, project_id=project_id,
+                    session_id=session_id, current_instruction=instruction,
+                    element_snapshot=snapshot, related_files=related_files or [path],
+                )
+                persist_context_snapshot(
+                    db, owner_id=chat_session.user_id, project_id=project_id,
+                    session_id=session_id, modification_id=modification_id,
+                    kind="modification", payload=context_package,
+                )
+                db.commit()
             agent_result = await run_modification_agent({
                 "modification_id": modification_id,
                 "project_id": modification.project_id if modification else 0,
                 "session_id": session_id,
                 "workspace": str(workspace),
                 "instruction": instruction,
+                "context_package": context_package,
                 "element_snapshot": snapshot,
                 "related_files": related_files or [path],
             })
@@ -328,6 +364,22 @@ async def run_modification_task(modification_id: int) -> None:
                 modification.finished_at = datetime.now()
                 db.commit()
         await _publish(session_id, modification_id, {"type": "clarification", "question": str(exc)})
+    except AgentBudgetPaused as exc:
+        with SessionLocal() as db:
+            modification = db.get(Modification, modification_id)
+            if modification is not None:
+                modification.status = "paused_budget"
+                modification.finished_at = None
+                db.commit()
+        await _publish(session_id, modification_id, {"type": "paused", "status": "paused_budget", "reason": str(exc)})
+    except AgentNeedsReview as exc:
+        with SessionLocal() as db:
+            modification = db.get(Modification, modification_id)
+            if modification is not None:
+                modification.status = "needs_review"
+                modification.finished_at = None
+                db.commit()
+        await _publish(session_id, modification_id, {"type": "paused", "status": "needs_review", "reason": str(exc)})
     except Exception as exc:  # noqa: BLE001
         if pre_edit_version_id is not None and project_id:
             with SessionLocal() as db:

@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from app.agents.generation.state import GenerationState
+from app.agents.budget import AgentBudgetPaused, AgentNeedsReview
 from app.agents.tools import edit_file, list_files, read_file, write_file
 from app.core.config import get_settings
 from app.core.database import SessionLocal
@@ -13,12 +14,14 @@ from app.models.generation import Generation
 from app.models.evaluation import Evaluation
 from app.models.guardrail import GuardrailEvent
 from app.models.message import Message
+from app.models.generation_task import GenerationTask
 from app.services.chat_log import save_generation_event
 from app.services.events import get_broker
 from app.services.evaluation import apply_visual_evaluation, evaluate_delivery, evaluation_wire
 from app.services.llm import LLMClient
 from app.services.sandbox import validate_build as run_validate_build
 from app.services.version import snapshot_project
+from app.services.generation_tasks import create_generation_tasks, mark_task
 
 INPUT_BLOCK_PATTERNS = [
     "忽略以上",
@@ -127,6 +130,7 @@ async def create_plan(state: GenerationState) -> dict:
         gen = db.get(Generation, state["generation_id"])
         if gen is not None:
             gen.plan_json = plan
+            create_generation_tasks(db, gen.id, plan)
             db.commit()
     await publish_event(state, {"type": "stage", "stage": "plan"})
     steps_text = "；".join(
@@ -439,11 +443,50 @@ async def generate_code(state: GenerationState) -> dict:
     if llm_real and not state.get("repair_mode"):
         from app.agents.generation.agent import run_generation_agent
 
-        result = await run_generation_agent(state)
+        total_usage = {"prompt_tokens": 0, "completion_tokens": 0}
+        summaries: list[str] = []
+        with SessionLocal() as db:
+            tasks = (
+                db.query(GenerationTask)
+                .filter(GenerationTask.generation_id == gen_id, GenerationTask.status == "pending")
+                .order_by(GenerationTask.sequence_no.asc())
+                .all()
+            )
+        # A plan created before this migration has no tasks; retain the legacy
+        # single-Agent behaviour rather than making an existing task unusable.
+        if not tasks:
+            result = await run_generation_agent(state)
+            return {
+                "files": list(dict.fromkeys([*state.get("files", []), *result["files"]])),
+                "summary": result["summary"],
+                "token_usage": result["token_usage"],
+                "status": "generating",
+            }
+        for task in tasks:
+            _check_cancel(state)
+            with SessionLocal() as db:
+                mark_task(db, task.id, "running")
+                db.commit()
+            await publish_event(state, {"type": "task_started", "task_id": task.id, "title": task.title, "sequence_no": task.sequence_no})
+            task_state = {**state, "current_task": {"id": str(task.id), "title": task.title, "detail": task.detail}}
+            try:
+                result = await run_generation_agent(task_state)
+            except (AgentBudgetPaused, AgentNeedsReview):
+                with SessionLocal() as db:
+                    mark_task(db, task.id, "pending")
+                    db.commit()
+                raise
+            for key in total_usage:
+                total_usage[key] += int(result["token_usage"].get(key, 0))
+            summaries.append(str(result.get("summary") or task.title))
+            with SessionLocal() as db:
+                mark_task(db, task.id, "succeeded", str(result.get("summary") or ""))
+                db.commit()
+            await publish_event(state, {"type": "task_completed", "task_id": task.id, "title": task.title, "sequence_no": task.sequence_no})
         return {
-            "files": list(dict.fromkeys([*state.get("files", []), *result["files"]])),
-            "summary": result["summary"],
-            "token_usage": result["token_usage"],
+            "files": list_files(Path(state["workspace"])),
+            "summary": "\n".join(summaries),
+            "token_usage": total_usage,
             "status": "generating",
         }
 

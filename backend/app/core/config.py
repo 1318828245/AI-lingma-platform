@@ -66,6 +66,19 @@ class Settings(BaseSettings):
 
     # 生成 Agent（ReAct 工具循环）
     agent_max_iterations: int = 50
+    # New execution budgets. agent_max_iterations remains a backwards
+    # compatible fallback for installations that already persisted it.
+    agent_max_model_steps: int = 100
+    agent_max_tool_calls: int = 300
+    agent_soft_limit_ratio: float = 0.8
+    agent_max_no_progress_steps: int = 8
+    # Agent memory is bounded before it enters a model prompt.  Values are
+    # intentionally character-based so they remain provider/tokenizer neutral.
+    agent_memory_context_chars: int = 12000
+    agent_memory_recent_messages: int = 12
+    agent_memory_recent_changes: int = 8
+    agent_memory_recent_versions: int = 8
+    agent_memory_asset_limit: int = 12
 
     # 异步素材编排：图片来源均通过白名单适配器访问，密钥不暴露给模型。
     asset_request_timeout_seconds: int = 8

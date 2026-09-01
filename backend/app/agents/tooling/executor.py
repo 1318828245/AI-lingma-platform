@@ -42,6 +42,29 @@ async def execute_tool(call: ToolCall, context: ToolExecutionContext) -> ToolRes
             return ToolResult(True, {"files": list_files(context.workspace)})
         if call.name == "read_file":
             return ToolResult(True, {"content": read_file(context.workspace, str(args["path"]))[:10000]})
+        if call.name == "read_files":
+            paths = args.get("paths") or []
+            if not isinstance(paths, list) or len(paths) > 12:
+                return ToolResult(False, error="read_files accepts 1 to 12 paths")
+            return ToolResult(True, {"files": {str(path): read_file(context.workspace, str(path))[:8000] for path in paths}})
+        if call.name == "search_codebase":
+            query = str(args.get("query") or "").strip()
+            if not query:
+                return ToolResult(False, error="search query cannot be empty")
+            limit = min(max(int(args.get("max_results") or 30), 1), 80)
+            matches = []
+            for path in list_files(context.workspace):
+                if len(matches) >= limit:
+                    break
+                try:
+                    for line_no, line in enumerate(read_file(context.workspace, path).splitlines(), start=1):
+                        if query.lower() in line.lower():
+                            matches.append({"path": path, "line": line_no, "content": line[:500]})
+                            if len(matches) >= limit:
+                                break
+                except UnicodeDecodeError:
+                    continue
+            return ToolResult(True, {"matches": matches})
         if call.name in {"write_file", "edit_file"}:
             path = str(args["path"])
             content = str(args.get("content", args.get("new", "")))
@@ -56,6 +79,24 @@ async def execute_tool(call: ToolCall, context: ToolExecutionContext) -> ToolRes
             if context.on_file_written:
                 await context.on_file_written(path, written)
             return ToolResult(True, {"path": path})
+        if call.name == "write_files":
+            files = args.get("files") or []
+            if not isinstance(files, list) or not files or len(files) > 12:
+                return ToolResult(False, error="write_files accepts 1 to 12 files")
+            paths = []
+            with SessionLocal() as db:
+                for item in files:
+                    if not isinstance(item, dict) or not isinstance(item.get("path"), str) or not isinstance(item.get("content"), str):
+                        return ToolResult(False, error="each file needs path and content")
+                    path, content = item["path"], item["content"]
+                    if context.output_guard:
+                        context.output_guard(path, content)
+                    write_file(db, context.project_id, context.workspace, path, content)
+                    paths.append(path)
+            if context.on_file_written:
+                for path in paths:
+                    await context.on_file_written(path, read_file(context.workspace, path))
+            return ToolResult(True, {"paths": paths})
         if call.name == "collect_assets":
             from app.services.assets import enqueue_asset_collection
 
