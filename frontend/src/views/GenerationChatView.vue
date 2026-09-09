@@ -7,6 +7,7 @@
         <div>
           <p class="eyebrow">LINGMA / BUILD ROOM</p>
           <h1 class="name">{{ project?.name || "生成对话" }}</h1>
+          <p class="project-context">需求、构建和预览保持同步</p>
         </div>
       </div>
       <div class="right">
@@ -2457,6 +2458,12 @@ async function renameProject() {
   font-size: 22px;
   line-height: 1.15;
   letter-spacing: -0.035em;
+}
+.project-context {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.3;
 }
 .back,
 .ghost {

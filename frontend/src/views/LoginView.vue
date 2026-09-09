@@ -11,30 +11,37 @@
       </ul>
     </div>
     <form class="panel login-card" @submit.prevent="submit">
-      <p class="panel-title">登录工作台</p>
+      <p class="panel-title">{{ registering ? '注册工作台账号' : '登录工作台' }}</p>
       <label class="field">
         <span class="mono label">用户名</span>
-        <input v-model="form.username" autocomplete="username" placeholder="admin" />
+        <input v-model="form.username" autocomplete="username" :placeholder="registering ? '3–64 位字母、数字、下划线或连字符' : 'admin'" />
       </label>
       <label class="field">
         <span class="mono label">密码</span>
         <input
           v-model="form.password"
           type="password"
-          autocomplete="current-password"
-          placeholder="输入密码"
+          :autocomplete="registering ? 'new-password' : 'current-password'"
+          :placeholder="registering ? '至少 6 位密码' : '输入密码'"
         />
       </label>
+      <label v-if="registering" class="field">
+        <span class="mono label">邮箱（选填）</span>
+        <input v-model="form.email" autocomplete="email" type="email" placeholder="name@example.com" />
+      </label>
       <button class="submit" type="submit" :disabled="loading">
-        {{ loading ? "登录中…" : "进入工作台" }}
+        {{ loading ? (registering ? '注册中…' : '登录中…') : (registering ? '创建账号' : '进入工作台') }}
       </button>
-      <p class="muted hint">默认账号 admin，密码 admin123</p>
+      <button v-if="registrationEnabled" class="switch-mode" type="button" :disabled="loading" @click="toggleMode">
+        {{ registering ? '已有账号？返回登录' : '没有账号？立即注册' }}
+      </button>
+      <p class="muted hint">{{ registering ? '注册完成后以普通用户身份进入工作台。' : '默认账号 admin，密码 admin123' }}</p>
     </form>
   </div>
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from "vue";
+import { onMounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import { api } from "../api/client";
@@ -44,7 +51,26 @@ import type { User } from "../types";
 const router = useRouter();
 const auth = useAuthStore();
 const loading = ref(false);
-const form = reactive({ username: "admin", password: "" });
+const registering = ref(false);
+const registrationEnabled = ref(false);
+const form = reactive({ username: "admin", password: "", email: "" });
+
+onMounted(async () => {
+  try {
+    const { data } = await api.get<{ enabled: boolean }>("/auth/registration-status");
+    registrationEnabled.value = data.enabled;
+  } catch {
+    // Keep the login path usable if a deployment has not yet updated the API.
+    registrationEnabled.value = false;
+  }
+});
+
+function toggleMode() {
+  registering.value = !registering.value;
+  form.password = "";
+  form.email = "";
+  if (registering.value && form.username === "admin") form.username = "";
+}
 
 async function submit() {
   if (!form.username || !form.password) {
@@ -53,7 +79,15 @@ async function submit() {
   }
   loading.value = true;
   try {
-    const { data } = await api.post("/auth/login", form);
+    if (registering.value) {
+      await api.post("/auth/register", form);
+      ElMessage.success("注册成功，请登录");
+      registering.value = false;
+      form.password = "";
+      form.email = "";
+      return;
+    }
+    const { data } = await api.post("/auth/login", { username: form.username, password: form.password });
     const payload: {
       access_token: string;
       refresh_token: string;
@@ -170,6 +204,21 @@ async function submit() {
   opacity: 0.6;
   cursor: not-allowed;
 }
+.switch-mode {
+  align-self: center;
+  border: 0;
+  padding: 2px 4px;
+  background: transparent;
+  color: var(--primary-dark);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.switch-mode:hover:not(:disabled) {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.switch-mode:disabled { cursor: wait; opacity: .6; }
 .hint {
   text-align: center;
   font-size: 12px;

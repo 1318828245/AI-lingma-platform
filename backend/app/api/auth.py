@@ -27,6 +27,13 @@ class LoginResponse(TokenPair):
     user: UserOut
 
 
+@router.get("/registration-status")
+def registration_status() -> dict[str, bool]:
+    """Expose only whether self-service registration is available to visitors."""
+    settings = get_settings()
+    return {"enabled": bool(settings_store.get("register_enabled", settings.register_enabled))}
+
+
 @router.post("/register", status_code=201)
 def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> UserOut:
     settings = get_settings()

@@ -24,11 +24,26 @@ def test_login_wrong_password(client):
 
 
 def test_register_disabled_by_default(client):
+    status = client.get("/api/auth/registration-status")
+    assert status.status_code == 200
+    assert status.json() == {"enabled": False}
+
     resp = client.post(
         "/api/auth/register",
         json={"username": "newbie", "password": "newbie123"},
     )
     assert resp.status_code == 403
+
+
+def test_registered_user_has_user_role(client, admin_headers):
+    client.put("/api/admin/settings", headers=admin_headers, json={"register_enabled": True})
+    response = client.post(
+        "/api/auth/register",
+        json={"username": "newmember", "password": "newmember123"},
+    )
+    assert response.status_code == 201
+    assert response.json()["role"] == "user"
+    client.put("/api/admin/settings", headers=admin_headers, json={"register_enabled": False})
 
 
 def test_me(client, admin_headers):
