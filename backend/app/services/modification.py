@@ -368,18 +368,18 @@ async def run_modification_task(modification_id: int) -> None:
         with SessionLocal() as db:
             modification = db.get(Modification, modification_id)
             if modification is not None:
-                modification.status = "paused_budget"
-                modification.finished_at = None
+                modification.status = "failed"
+                modification.finished_at = datetime.now()
                 db.commit()
-        await _publish(session_id, modification_id, {"type": "paused", "status": "paused_budget", "reason": str(exc)})
+        await _publish(session_id, modification_id, {"type": "task_error", "error": str(exc)})
     except AgentNeedsReview as exc:
         with SessionLocal() as db:
             modification = db.get(Modification, modification_id)
             if modification is not None:
-                modification.status = "needs_review"
-                modification.finished_at = None
+                modification.status = "failed"
+                modification.finished_at = datetime.now()
                 db.commit()
-        await _publish(session_id, modification_id, {"type": "paused", "status": "needs_review", "reason": str(exc)})
+        await _publish(session_id, modification_id, {"type": "task_error", "error": str(exc)})
     except Exception as exc:  # noqa: BLE001
         if pre_edit_version_id is not None and project_id:
             with SessionLocal() as db:

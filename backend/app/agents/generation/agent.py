@@ -330,7 +330,7 @@ async def run_generation_agent(
             )
             no_progress_steps += 1
             if no_progress_steps >= budget.max_no_progress_steps:
-                raise AgentNeedsReview("连续模型决策未产生可执行工具调用，请补充需求或检查任务计划")
+                raise AgentNeedsReview("连续模型决策未产生可执行工具调用。工作区已保留，请补充需求后创建新的任务")
             continue
 
         assistant_msg = {
@@ -346,7 +346,7 @@ async def run_generation_agent(
         ]
         if tool_calls_used + len(executable_calls) > max_tool_calls:
             raise AgentBudgetPaused(
-                f"工具调用达到上限（{max_tool_calls}）；当前进度已保存，可继续执行"
+                f"工具调用达到上限（{max_tool_calls}）。工作区已保留，请基于当前结果创建新的修改任务"
             )
 
         for tool_index, tool_call in enumerate(tool_calls):
@@ -431,10 +431,10 @@ async def run_generation_agent(
                 no_progress_steps += 1
             if no_progress_steps >= budget.max_no_progress_steps:
                 raise AgentNeedsReview(
-                    f"连续 {no_progress_steps} 次工具调用未产生文件或素材进展，请人工确认后继续"
+                    f"连续 {no_progress_steps} 次工具调用未产生文件或素材进展。工作区已保留，请创建新的任务"
                 )
     raise AgentBudgetPaused(
-        f"已使用完 {max_iterations} 个模型决策轮次；当前进度已保存，可继续执行"
+        f"已使用完 {max_iterations} 个模型决策轮次。工作区已保留，请基于当前结果创建新的修改任务"
     )
 
 

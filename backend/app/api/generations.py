@@ -193,24 +193,6 @@ def cancel_generation(
     return {"ok": True, "status": "cancelling"}
 
 
-@router.post("/api/generations/{generation_id}/resume", response_model=GenerationOut)
-async def resume_generation(
-    generation_id: int,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    gen = get_generation_for_user(db, generation_id, user.id)
-    if gen.status not in {"paused_budget", "needs_review", "interrupted"}:
-        raise HTTPException(status_code=409, detail="当前任务不能继续执行")
-    gen.status = "pending"
-    gen.error = None
-    gen.finished_at = None
-    db.commit()
-    db.refresh(gen)
-    await get_task_manager().enqueue(_make_task(gen.id), on_timeout=_make_timeout(gen.id))
-    return _gen_out(gen)
-
-
 @router.post("/api/generations/{generation_id}/message", response_model=GenerationOut)
 async def append_generation_message(
     generation_id: int,

@@ -157,7 +157,7 @@ async def run_modification_agent(
             messages.append({"role": "assistant", "content": "Use the available tools to complete the requested source change."})
             no_progress_steps += 1
             if no_progress_steps >= budget.max_no_progress_steps:
-                raise AgentNeedsReview("连续模型决策未产生可执行工具调用，请补充修改目标后继续")
+                raise AgentNeedsReview("连续模型决策未产生可执行工具调用。工作区已保留，请补充修改目标后创建新的任务")
             continue
         messages.append({"role": "assistant", "content": message.get("content") or "", "tool_calls": tool_calls})
         executable_calls = [
@@ -165,7 +165,9 @@ async def run_modification_agent(
             if ToolCall.from_wire(raw, "budget_check").name != "finish"
         ]
         if tool_calls_used + len(executable_calls) > max_tool_calls:
-            raise AgentBudgetPaused(f"工具调用达到上限（{max_tool_calls}）；当前进度已保存，可继续执行")
+            raise AgentBudgetPaused(
+                f"工具调用达到上限（{max_tool_calls}）。工作区已保留，请提交新的修改任务"
+            )
         for index, raw_call in enumerate(tool_calls):
             call = ToolCall.from_wire(raw_call, f"call_{step}_{index}")
             if call.name == "finish":
@@ -197,8 +199,10 @@ async def run_modification_agent(
                 no_progress_steps += 1
             if no_progress_steps >= budget.max_no_progress_steps:
                 raise AgentNeedsReview(
-                    f"连续 {no_progress_steps} 次工具调用未产生文件或素材进展，请人工确认后继续"
+                    f"连续 {no_progress_steps} 次工具调用未产生文件或素材进展。工作区已保留，请创建新的任务"
                 )
             await _emit(state, {"type": "tool_call_completed", "tool": call.name, "tool_call_id": call.id, "ok": result.ok, "detail": display_detail(call), "error": error_hint(result)})
             messages.append({"role": "tool", "tool_call_id": call.id, "content": result.to_message_content()})
-    raise AgentBudgetPaused(f"已使用完 {max_model_steps} 个模型决策轮次；当前进度已保存，可继续执行")
+    raise AgentBudgetPaused(
+        f"已使用完 {max_model_steps} 个模型决策轮次。工作区已保留，请提交新的修改任务"
+    )

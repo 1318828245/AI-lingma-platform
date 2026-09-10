@@ -471,9 +471,9 @@ async def generate_code(state: GenerationState) -> dict:
             task_state = {**state, "current_task": {"id": str(task.id), "title": task.title, "detail": task.detail}}
             try:
                 result = await run_generation_agent(task_state)
-            except (AgentBudgetPaused, AgentNeedsReview):
+            except (AgentBudgetPaused, AgentNeedsReview) as exc:
                 with SessionLocal() as db:
-                    mark_task(db, task.id, "pending")
+                    mark_task(db, task.id, "failed", str(exc))
                     db.commit()
                 raise
             for key in total_usage:

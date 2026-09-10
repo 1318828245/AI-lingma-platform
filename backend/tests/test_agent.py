@@ -210,9 +210,9 @@ def test_agent_guardrail_blocks_dangerous_write(
 
     monkeypatch.setattr(LLMClient, "stream_complete_with_tools", fake_complete)
     with pytest.raises(Exception) as exc:
-        # 假 LLM 只返回一个危险写入，没有 finish → 轮次耗尽抛 GenerationFailed
+        # 假 LLM 只返回一个危险写入，没有 finish → 达到固定轮次上限。
         asyncio.run(run_generation_agent(state, max_iterations=1))
-    assert "当前进度已保存" in str(exc.value)
+    assert "工作区已保留" in str(exc.value)
 
     ws = project_workspace(project["id"])
     assert not (ws / "evil.sh").exists()

@@ -51,13 +51,6 @@
           />
         </section>
 
-        <section
-          v-if="(runningGen && ['paused_budget', 'needs_review', 'interrupted'].includes(runningGen.status)) || (runningModification && ['paused_budget', 'needs_review'].includes(runningModification.status))"
-          class="panel budget-paused-card"
-        >
-          <span>任务已暂停，可在保留当前工作区的基础上继续执行。</span>
-          <button type="button" @click="resumePausedTask">继续执行</button>
-        </section>
         <section class="panel chat-card">
           <div v-if="taskWaitingText" class="generation-status-beacon" role="status">
             <span class="generation-status-spinner" aria-hidden="true" />
@@ -428,7 +421,6 @@ import {
   getActiveGeneration,
   getGeneration,
   getStackAdvice,
-  resumeGeneration,
 } from "../api/generations";
 import {
   getProject,
@@ -442,7 +434,7 @@ import {
 } from "../api/projects";
 import type { QualityEvaluation } from "../api/projects";
 import type { AgentContextSnapshot } from "../api/projects";
-import { createModification, getActiveModification, modificationEventUrl, resumeModification } from "../api/modifications";
+import { createModification, getActiveModification, modificationEventUrl } from "../api/modifications";
 import { acceptProjectVersion, undoProjectVersion } from "../api/versions";
 import type {
   ElementSnapshot,
@@ -950,7 +942,7 @@ function historyToEntries(history: Message[]): ChatEntry[] {
     }
     if (m.msg_type === "stage") {
       currentTools = null;
-      // Keep stage replay data out of chat bubbles, but use it to resume the
+      // Keep stage replay data out of chat bubbles, but use it to restore the
       // stage rail when a running task is reopened.
       persistedStages.value.push(m.content);
       continue;
@@ -1467,10 +1459,10 @@ async function refreshStatus(genId?: number) {
   if (!id) return;
   const gen = await getGeneration(id);
   runningGen.value = gen;
-  if (["succeeded", "failed", "cancelled", "timed_out", "paused_budget", "needs_review", "interrupted"].includes(gen.status)) {
+  if (["succeeded", "failed", "cancelled", "timed_out", "interrupted"].includes(gen.status)) {
     generationActive.value = false;
   }
-  if (["succeeded", "failed", "cancelled", "timed_out", "paused_budget", "needs_review", "interrupted"].includes(gen.status)) {
+  if (["succeeded", "failed", "cancelled", "timed_out", "interrupted"].includes(gen.status)) {
     eventSource?.close();
   }
 }
@@ -1479,28 +1471,6 @@ async function cancel() {
   if (!runningGen.value) return;
   await cancelGeneration(runningGen.value.id);
   ElMessage.info("已请求取消");
-}
-
-async function resumePausedTask() {
-  try {
-    if (runningGen.value && ["paused_budget", "needs_review", "interrupted"].includes(runningGen.value.status)) {
-      const generation = await resumeGeneration(runningGen.value.id);
-      runningGen.value = generation;
-      generationActive.value = true;
-      progressStage.value = "parse";
-      watchGeneration(generation.id);
-      return;
-    }
-    if (runningModification.value && ["paused_budget", "needs_review"].includes(runningModification.value.status)) {
-      const modification = await resumeModification(runningModification.value.id);
-      runningModification.value = modification;
-      modificationActive.value = true;
-      modificationStage.value = "locate";
-      watchModification(modification.id);
-    }
-  } catch (error: any) {
-    ElMessage.error(error.response?.data?.detail || "继续执行失败，请稍后重试");
-  }
 }
 
 async function renameProject() {

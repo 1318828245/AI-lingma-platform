@@ -15,7 +15,7 @@ class AgentBudget:
 
 
 class AgentBudgetPaused(Exception):
-    """The task made useful progress but needs an explicit continuation."""
+    """The Agent exhausted a fixed execution budget."""
 
 
 class AgentNeedsReview(Exception):

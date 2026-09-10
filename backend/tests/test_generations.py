@@ -170,6 +170,40 @@ def test_generation_guardrail_blocks(client, admin_headers):
     assert count >= 1
 
 
+def test_budget_exhaustion_is_terminal_and_cannot_resume(client, admin_headers, monkeypatch):
+    import asyncio
+
+    from app.agents.budget import AgentBudgetPaused
+    from app.core.database import SessionLocal
+    from app.models.generation import Generation
+    from app.models.session import Session as ChatSession
+    from app.services import generation as generation_service
+
+    project = _create_project(client, admin_headers, "Budget terminal")
+    with SessionLocal() as db:
+        session = db.query(ChatSession).filter(ChatSession.project_id == project["id"]).one()
+        generation = Generation(
+            project_id=project["id"],
+            session_id=session.id,
+            status="pending",
+            requirement="Generate a page",
+        )
+        db.add(generation)
+        db.commit()
+        generation_id = generation.id
+
+    async def exhaust_budget(_state):
+        raise AgentBudgetPaused("工具调用达到上限（1）。工作区已保留，请基于当前结果创建新的修改任务")
+
+    monkeypatch.setattr(generation_service, "run_generation_workflow", exhaust_budget)
+    asyncio.run(generation_service.run_generation_task(generation_id))
+
+    generation = client.get(f"/api/generations/{generation_id}", headers=admin_headers).json()
+    assert generation["status"] == "failed"
+    assert "工具调用达到上限" in generation["error"]
+    assert client.post(f"/api/generations/{generation_id}/resume", headers=admin_headers).status_code == 404
+
+
 def test_generation_cancel(client, admin_headers):
     project = _create_project(client, admin_headers, "取消测试")
     resp = client.post(

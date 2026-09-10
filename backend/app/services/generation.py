@@ -151,16 +151,6 @@ def mark_timed_out(generation_id: int) -> None:
             db.commit()
 
 
-def mark_waiting_review(generation_id: int, status: str, reason: str) -> None:
-    with SessionLocal() as db:
-        gen = db.get(Generation, generation_id)
-        if gen is not None:
-            gen.status = status
-            gen.error = reason[:2000]
-            gen.finished_at = None
-            db.commit()
-
-
 def recover_interrupted_tasks() -> int:
     with SessionLocal() as db:
         rows = (
@@ -230,11 +220,11 @@ async def run_generation_task(generation_id: int) -> None:
             generation_id, {"type": "cancelled", "generation_id": generation_id}
         )
     except AgentBudgetPaused as exc:
-        mark_waiting_review(generation_id, "paused_budget", str(exc))
-        await broker.publish(generation_id, {"type": "paused", "status": "paused_budget", "reason": str(exc)})
+        mark_failed(generation_id, str(exc))
+        await broker.publish(generation_id, {"type": "error", "error": str(exc)})
     except AgentNeedsReview as exc:
-        mark_waiting_review(generation_id, "needs_review", str(exc))
-        await broker.publish(generation_id, {"type": "paused", "status": "needs_review", "reason": str(exc)})
+        mark_failed(generation_id, str(exc))
+        await broker.publish(generation_id, {"type": "error", "error": str(exc)})
     except (GenerationBlocked, GenerationFailed) as exc:
         mark_failed(generation_id, str(exc))
         await broker.publish(
