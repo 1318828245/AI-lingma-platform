@@ -14,7 +14,7 @@
       <p class="panel-title">{{ registering ? '注册工作台账号' : '登录工作台' }}</p>
       <label class="field">
         <span class="mono label">用户名</span>
-        <input v-model="form.username" autocomplete="username" :placeholder="registering ? '3–64 位字母、数字、下划线或连字符' : 'admin'" />
+        <input v-model="form.username" autocomplete="username" :placeholder="registering ? '3–64 位字母、数字、下划线或连字符' : 'user123'" />
       </label>
       <label class="field">
         <span class="mono label">密码</span>
@@ -35,7 +35,7 @@
       <button v-if="registrationEnabled" class="switch-mode" type="button" :disabled="loading" @click="toggleMode">
         {{ registering ? '已有账号？返回登录' : '没有账号？立即注册' }}
       </button>
-      <p class="muted hint">{{ registering ? '注册完成后以普通用户身份进入工作台。' : '默认账号 admin，密码 admin123' }}</p>
+      <p class="muted hint">{{ registering ? '注册完成后以普通用户身份进入工作台。' : '默认账号 user123，密码 user123' }}</p>
     </form>
   </div>
 </template>
@@ -53,7 +53,7 @@ const auth = useAuthStore();
 const loading = ref(false);
 const registering = ref(false);
 const registrationEnabled = ref(false);
-const form = reactive({ username: "admin", password: "", email: "" });
+const form = reactive({ username: "user123", password: "", email: "" });
 
 onMounted(async () => {
   try {
@@ -69,7 +69,7 @@ function toggleMode() {
   registering.value = !registering.value;
   form.password = "";
   form.email = "";
-  if (registering.value && form.username === "admin") form.username = "";
+  if (registering.value && form.username === "user123") form.username = "";
 }
 
 async function submit() {

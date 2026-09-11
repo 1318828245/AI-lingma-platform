@@ -14,6 +14,9 @@ from app.models.deployment import Deployment
 from app.models.project import Project
 from app.models.project_version import ProjectVersion
 from app.services.version import get_version, list_versions, version_manifest
+from app.services.project import project_workspace
+from app.services.sandbox import validate_build
+from app.services.version import snapshot_project
 
 
 def _deployment_slug(project: Project, version: ProjectVersion) -> str:
@@ -147,3 +150,21 @@ def create_deployment(
     db.commit()
     db.refresh(deployment)
     return deployment
+
+
+async def rebuild_and_deploy(
+    db: Session, project: Project, user_id: int
+) -> tuple[Deployment | None, list[str], list[str]]:
+    """Build the current workspace, snapshot its delivery files, then publish it."""
+    ok, log, errors = await validate_build(project_workspace(project), project.tech_stack)
+    if not ok:
+        return None, log, errors
+
+    version = snapshot_project(
+        db,
+        project.id,
+        source_type="deployment",
+        summary="一键重新构建并发布",
+        include_build_output=True,
+    )
+    return create_deployment(db, project, user_id, version.id), log, errors

@@ -24,6 +24,11 @@ export async function createDeployment(projectId: number, versionId?: number): P
   return data;
 }
 
+export async function rebuildAndPublishDeployment(projectId: number): Promise<Deployment> {
+  const { data } = await api.post(`/projects/${projectId}/deployments/rebuild-and-publish`);
+  return data;
+}
+
 export async function activateDeployment(projectId: number, deploymentId: number): Promise<Deployment> {
   const { data } = await api.post(`/projects/${projectId}/deployments/${deploymentId}/activate`);
   return data;

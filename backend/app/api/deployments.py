@@ -10,7 +10,7 @@ from app.models.deployment import Deployment
 from app.models.project import Project
 from app.models.user import User
 from app.schemas.deployment import DeploymentCreate, DeploymentOut
-from app.services.deployment import activate_deployment, create_deployment, get_deployment, list_deployments, offline_deployment
+from app.services.deployment import activate_deployment, create_deployment, get_deployment, list_deployments, offline_deployment, rebuild_and_deploy
 from app.services.project import get_owned_project
 from app.services.audit import record_audit
 
@@ -45,6 +45,18 @@ def deploy_project(project_id: int, payload: DeploymentCreate, request: Request,
     project = get_owned_project(db, project_id, user.id)
     deployment = create_deployment(db, project, user.id, payload.version_id)
     record_audit(db, actor_id=user.id, action="deployment.created", target_type="deployment", target_id=deployment.id, detail={"project_id": project.id, "version": deployment.version})
+    db.commit()
+    return _deployment_out(deployment, project, request)
+
+
+@router.post("/api/projects/{project_id}/deployments/rebuild-and-publish", response_model=DeploymentOut)
+async def rebuild_and_publish_project(project_id: int, request: Request, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """The user-facing deployment path: build, snapshot, and make it live in one request."""
+    project = get_owned_project(db, project_id, user.id)
+    deployment, _log, errors = await rebuild_and_deploy(db, project, user.id)
+    if deployment is None:
+        raise HTTPException(status_code=422, detail={"message": "构建失败，未创建发布版本", "errors": errors[-20:]})
+    record_audit(db, actor_id=user.id, action="deployment.rebuilt_and_published", target_type="deployment", target_id=deployment.id, detail={"project_id": project.id, "version": deployment.version})
     db.commit()
     return _deployment_out(deployment, project, request)
 

@@ -84,6 +84,36 @@ def test_publish_plain_html_multifile_project(client, admin_headers):
     assert stylesheet.status_code == 200
 
 
+def test_rebuild_and_publish_snapshots_vite_delivery(client, admin_headers, monkeypatch):
+    project = client.post(
+        "/api/projects",
+        headers=admin_headers,
+        json={"name": "One click Vue", "template": "blank", "tech_stack": "vue3"},
+    ).json()
+
+    async def built_delivery(workspace, tech_stack):
+        (workspace / "dist" / "assets").mkdir(parents=True, exist_ok=True)
+        (workspace / "dist" / "index.html").write_text('<script src="./assets/app.js"></script>', encoding="utf-8")
+        (workspace / "dist" / "assets" / "app.js").write_text("console.log('live')", encoding="utf-8")
+        return True, ["build passed"], []
+
+    monkeypatch.setattr("app.services.deployment.validate_build", built_delivery)
+    response = client.post(
+        f"/api/projects/{project['id']}/deployments/rebuild-and-publish", headers=admin_headers
+    )
+    assert response.status_code == 200, response.text
+    deployment = response.json()
+    assert deployment["status"] == "ready"
+    assert deployment["version"] == 1
+    assert "./assets/app.js" in client.get(deployment["site_url"]).text
+    assert client.get(f"/sites/{project['slug']}/assets/app.js").status_code == 200
+
+    with SessionLocal() as db:
+        from app.models.project_version import ProjectVersion
+        version = db.query(ProjectVersion).filter_by(project_id=project["id"]).one()
+        assert "dist/index.html" in version.snapshot_manifest_json
+
+
 def test_switch_active_deployment_and_take_offline(client, admin_headers):
     project, first_version_id = _project_with_build(client, admin_headers)
     first = client.post(

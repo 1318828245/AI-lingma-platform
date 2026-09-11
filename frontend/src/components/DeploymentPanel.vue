@@ -10,14 +10,11 @@
           <p class="launch-description">{{ activeDeployment ? '稳定线上地址会始终指向当前版本。你可以从历史记录恢复旧版本，或立即下线当前站点。' : '发布会保存当前成功构建，并生成一个任何人都能打开的稳定线上地址。' }}</p>
         </div>
         <div class="launch-orbit" :class="{ live: activeDeployment }" aria-hidden="true"><span>↗</span></div>
-        <button class="launch-button" type="button" :disabled="publishing || rebuilding || loading" @click="confirmPublish">
+        <button class="launch-button" type="button" :disabled="publishing || loading" @click="confirmPublish">
           <span class="launch-button-icon">{{ publishing ? '…' : '↗' }}</span>
-          <span><b>{{ publishing ? '正在创建发布版本' : '发布当前构建' }}</b><small>{{ publishing ? '正在整理静态交付物' : '生成新的公开访问链接' }}</small></span>
+          <span><b>{{ publishing ? '正在构建并发布' : '一键重新部署并发布' }}</b><small>{{ publishing ? '正在构建、保存并上线最新版本' : '自动构建最新代码并更新线上站点' }}</small></span>
         </button>
-        <button class="rebuild-button" type="button" :disabled="publishing || rebuilding || loading" @click="rebuild">
-          {{ rebuilding ? '正在重新构建…' : '重新构建预览' }}
-        </button>
-        <p class="launch-note">发布 Vue 项目的构建产物，或 HTML/multifile 项目的静态文件。</p>
+        <p class="launch-note">一次完成构建、保存和上线；构建失败时，当前线上版本保持不变。</p>
       </section>
 
       <section class="access-zone">
@@ -49,14 +46,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { activateDeployment, createDeployment, listDeployments, offlineDeployment, type Deployment } from "../api/deployments";
-import { rebuildProjectPreview } from "../api/projects";
+import { activateDeployment, listDeployments, offlineDeployment, rebuildAndPublishDeployment, type Deployment } from "../api/deployments";
 
 const props = defineProps<{ projectId: number }>();
 const deployments = ref<Deployment[]>([]);
 const loading = ref(false);
 const publishing = ref(false);
-const rebuilding = ref(false);
 const showAll = ref(false);
 const activeDeployment = computed(() => deployments.value.find((item) => item.is_active && item.status === "ready") || null);
 const visibleDeployments = computed(() => showAll.value ? deployments.value : deployments.value.slice(0, 4));
@@ -90,22 +85,12 @@ async function copyUrl(url: string) {
     ElMessage.warning("复制失败，请手动复制链接");
   }
 }
-async function rebuild() {
-  rebuilding.value = true;
-  try {
-    const result = await rebuildProjectPreview(props.projectId);
-    if (!result.ok) { ElMessage.error(result.errors[0] || "构建失败，请检查源码后重试"); return; }
-    ElMessage.success("构建完成，可发布当前构建产物");
-  } catch (error: any) {
-    ElMessage.error(error.response?.data?.detail || "重新构建失败");
-  } finally { rebuilding.value = false; }
-}
 async function confirmPublish() {
   try {
-    await ElMessageBox.confirm("将从当前成功构建创建一个新的公开发布版本。已有发布链接不会受到影响。", "确认发布当前构建", { confirmButtonText: "确认发布", cancelButtonText: "暂不发布", type: "info", closeOnClickModal: false });
+    await ElMessageBox.confirm("系统会重新构建最新代码并立即更新线上站点。构建失败时，当前线上版本不会受影响。", "一键重新部署并发布", { confirmButtonText: "立即发布", cancelButtonText: "取消", type: "info", closeOnClickModal: false });
   } catch { return; }
   publishing.value = true;
-  try { const result = await createDeployment(props.projectId); await load(); if (result.status === "ready") ElMessage.success("发布成功，公开链接已生成"); else ElMessage.error(result.error || "发布失败，请查看记录"); } catch (error: any) { ElMessage.error(error.response?.data?.detail || "无法创建发布版本"); } finally { publishing.value = false; }
+  try { const result = await rebuildAndPublishDeployment(props.projectId); await load(); if (result.status === "ready") ElMessage.success("最新版本已部署并上线"); else ElMessage.error(result.error || "发布失败，请查看记录"); } catch (error: any) { const detail = error.response?.data?.detail; ElMessage.error(Array.isArray(detail?.errors) ? detail.errors[0] : detail?.message || detail || "构建或发布失败"); } finally { publishing.value = false; }
 }
 async function confirmActivate(deployment: Deployment) {
   try { await ElMessageBox.confirm(`将版本 #${deployment.version} 设为线上版本，稳定访问地址会立即切换。`, "确认恢复历史版本", { confirmButtonText: "设为线上", cancelButtonText: "取消", type: "warning", closeOnClickModal: false }); } catch { return; }
@@ -127,4 +112,4 @@ onMounted(load);
 .history-zone { margin-top:16px; padding:21px 22px; } .refresh { display:inline-flex; align-items:center; gap:5px; min-height:34px; border:1px solid #cbd5fa; border-radius:8px; padding:6px 10px; background:#f5f7ff; color:#3b50b9; font-size:13px; font-weight:700; cursor:pointer; } .refresh span { font-size:16px; } .refresh:disabled { opacity:.45; cursor:wait; } .history-loading,.history-empty { padding:24px 0 7px; color:#65728e; font-size:14px; } .history-loading i { display:inline-block; width:10px; height:10px; margin-right:8px; border:2px solid #c3cbed; border-top-color:#5264d8; border-radius:50%; animation:spin .8s linear infinite; }
 .release-timeline { display:grid; gap:0; margin:19px 0 0; padding:0; list-style:none; } .release-timeline li { display:grid; grid-template-columns:24px 1fr; } .timeline-track { display:flex; flex-direction:column; align-items:center; } .timeline-track i { width:11px; height:11px; margin-top:5px; border:3px solid #e3e8fa; border-radius:50%; background:#5264d8; box-sizing:border-box; } .timeline-track em { flex:1; width:1px; margin:3px 0 -3px; background:#e5e9f5; } li.failed .timeline-track i,li.offline .timeline-track i { background:#d35a70; } li.publishing .timeline-track i { background:#e6a93a; } .release-timeline article { min-width:0; padding:0 0 18px 11px; } .record-top { color:#65728e; font-size:12px; } .record-state { color:#3a4bb0; font-weight:700; } .failed .record-state,.offline .record-state { color:#c4475d; } article strong { display:inline-block; margin:6px 10px 0 0; font-size:15px; } article code { color:#65718f; font-size:12px; } article a,.activate { display:inline-flex; align-items:center; min-height:32px; margin:9px 7px 0 0; border:1px solid #cbd5fa; border-radius:7px; padding:5px 9px; background:#f4f6ff; color:#3d52bf; font-size:12px; font-weight:700; text-decoration:none; cursor:pointer; transition:.15s ease; } .activate { border-color:#a7ddc2; background:#ecfbf3; color:#187448; } article a:hover,.activate:hover { transform:translateY(-1px); box-shadow:0 3px 8px rgba(59,79,167,.15); } .failure,.offline-note { margin:7px 0 0; color:#bd4559; font-size:12px; line-height:1.5; } .offline-note { color:#756681; } .more { min-height:34px; border:1px solid #cbd5fa; border-radius:8px; padding:6px 10px; background:#f5f7ff; color:#3b50b9; font-size:13px; font-weight:700; cursor:pointer; }
 @keyframes spin { to { transform:rotate(360deg); } } @media (max-width:760px) { .deployment-console { padding:18px; } .console-grid { grid-template-columns:1fr; } .launch-orbit { right:18px; } .access-zone { min-height:0; } } @media (prefers-reduced-motion:reduce) { .history-loading i { animation:none; } .launch-button { transition:none; } }
-.rebuild-button{width:100%;min-height:40px;margin-top:10px;border:1px solid rgba(255,255,255,.64);border-radius:9px;background:rgba(255,255,255,.14);color:#fff;font-size:13px;font-weight:700;cursor:pointer}.rebuild-button:hover:not(:disabled){background:rgba(255,255,255,.24)}.rebuild-button:disabled{opacity:.65;cursor:wait}</style>
+</style>

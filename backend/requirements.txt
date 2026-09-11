@@ -9,9 +9,6 @@ bcrypt>=4.1,<5.0
 alembic>=1.13,<2.0
 httpx>=0.27,<1.0
 pytest>=8.2,<9.0
-
-# 文档指定技术栈（LangChain + LangGraph）。运行环境为 conda env01-p10-drawimg，
-# 其中已预装 langgraph 1.2.x；以下版本与其兼容。
 langchain-core>=1.4,<2
 langchain-openai>=1.0,<2
 langgraph>=1.2,<2

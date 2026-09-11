@@ -36,14 +36,18 @@ def _version_root(db: Session, project_id: int) -> Path:
     return root
 
 
-def _workspace_files(project_id: int) -> list[tuple[str, Path]]:
+def _workspace_files(
+    project_id: int, *, include_build_output: bool = False
+) -> list[tuple[str, Path]]:
     workspace = project_workspace(project_id).resolve()
     if not workspace.exists():
         return []
     result: list[tuple[str, Path]] = []
     # 依赖/构建目录不属于项目源代码。npm install 会在 node_modules/.bin
     # 创建符号链接；将其纳入快照既浪费空间，也会被安全校验错误拦截。
-    excluded_dirs = {"node_modules", ".git", "dist", "build"}
+    excluded_dirs = {"node_modules", ".git"}
+    if not include_build_output:
+        excluded_dirs.update({"dist", "build"})
     for current, dirs, files in os.walk(workspace, followlinks=False):
         current_path = Path(current)
         kept_dirs: list[str] = []
@@ -80,6 +84,7 @@ def snapshot_project(
     source_type: str = "generation",
     source_id: int | None = None,
     summary: str | None = None,
+    include_build_output: bool = False,
 ) -> ProjectVersion:
     version_no = _next_version_no(db, project_id)
     root = _version_root(db, project_id)
@@ -90,7 +95,9 @@ def snapshot_project(
         for row in db.query(File).filter(File.project_id == project_id).all()
     }
 
-    for rel_path, source in _workspace_files(project_id):
+    for rel_path, source in _workspace_files(
+        project_id, include_build_output=include_build_output
+    ):
         clean = _safe_relative(rel_path)
         target = (root / clean).resolve()
         if not target.is_relative_to(root.resolve()):
