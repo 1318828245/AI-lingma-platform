@@ -2,7 +2,8 @@ FROM python:3.12-slim-bookworm AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
 # Chromium 用于项目缩略图和视觉评估；Node/npm 仅供受控构建路径使用。
 RUN apt-get update \
@@ -12,7 +13,9 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY backend/requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+ARG PIP_INDEX_URL=https://pypi.org/simple
+RUN pip install --no-cache-dir --retries 5 --timeout 180 \
+    --index-url "$PIP_INDEX_URL" -r requirements.txt
 
 COPY backend /app
 COPY docker/backend/start.sh /app/start.sh

@@ -26,6 +26,9 @@ services:
     build:
       context: .
       dockerfile: docker/backend/Dockerfile
+      args:
+        # 可在 .env.production 中设置 PIP_INDEX_URL，处理服务器访问 PyPI 较慢的情况。
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
     restart: unless-stopped
     # 与宿主 deploy 用户保持同一数值 UID/GID，保证 bind mount 的 /data 可写。
     user: "${AI_LINGMA_RUNTIME_UID:-1002}:${AI_LINGMA_RUNTIME_GID:-1002}"
