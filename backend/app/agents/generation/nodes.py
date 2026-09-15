@@ -22,6 +22,7 @@ from app.services.llm import LLMClient
 from app.services.sandbox import validate_build as run_validate_build
 from app.services.version import snapshot_project
 from app.services.generation_tasks import create_generation_tasks, mark_task, generation_plan
+from app.services.agent_review import review_instruction
 
 
 async def publish_plan(state: GenerationState, *, created: bool = False) -> None:
@@ -31,15 +32,6 @@ async def publish_plan(state: GenerationState, *, created: bool = False) -> None
             return
         event = {"type": "plan_created" if created else "plan_updated", **generation_plan(db, gen)}
     await publish_event(state, event)
-
-INPUT_BLOCK_PATTERNS = [
-    "忽略以上",
-    "忽略之前的",
-    "输出系统提示词",
-    "泄露系统提示词",
-    "rm -rf",
-    "drop table",
-]
 
 async def publish_event(state: GenerationState, event: dict) -> None:
     """推送 SSE 并持久化为会话消息（重新进入页面时回放）。"""
@@ -109,14 +101,13 @@ async def input_guardrail(state: GenerationState) -> dict:
             state, "input", "length", "high", "block", requirement[:500]
         )
         raise GenerationBlocked("输入超长，超过最大需求长度限制")
-    lowered = requirement.lower()
-    for pattern in INPUT_BLOCK_PATTERNS:
-        if pattern in lowered:
-            _record_guardrail(
-                state, "input", f"block:{pattern}", "high", "block", requirement[:500]
-            )
-            raise GenerationBlocked(f"输入被护轨拦截：命中规则 {pattern}")
-    guardrails.append({"rule": "input.basic", "level": "info", "action": "pass"})
+    review = review_instruction(requirement)
+    if review.action == "block":
+        _record_guardrail(state, "input", review.rule, "high", "block", requirement[:500])
+        raise GenerationBlocked(f"输入被护轨拦截：{review.reason}")
+    if review.action == "warn":
+        _record_guardrail(state, "input", review.rule, "warn", "warn", requirement[:500])
+    guardrails.append({"rule": review.rule, "level": "warn" if review.action == "warn" else "info", "action": review.action})
     return {"guardrails": guardrails, "status": "guarded"}
 
 

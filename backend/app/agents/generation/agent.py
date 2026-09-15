@@ -26,7 +26,7 @@ from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.prompts import render_prompt
 from app.services.chat_log import save_generation_event, save_message
-from app.services.agent_context import render_context_for_agent
+from app.services.agent_context import render_context_for_agent, render_tool_result_for_agent
 from app.services.events import get_broker
 from app.services.llm import LLMClient
 from app.services.sandbox import BuildError, run_command
@@ -160,7 +160,12 @@ def _build_user_prompt(state: GenerationState) -> str:
             + json.dumps({"errors": state.get("errors", []), "build_log": state.get("build_log", [])[-80:]}, ensure_ascii=False)[-16000:]
             + "\n[END BUILD REPAIR]"
         )
-    return state["requirement"] + task_prompt + render_context_for_agent(state.get("context_package", {})) + repair_prompt
+    request = (
+        "[USER PRODUCT REQUEST]\n"
+        f"{state['requirement']}\n"
+        "[END USER PRODUCT REQUEST]"
+    )
+    return request + task_prompt + render_context_for_agent(state.get("context_package", {})) + repair_prompt
 
 
 async def _emit(state: GenerationState, event: dict) -> None:
@@ -457,7 +462,7 @@ async def run_generation_agent(
                 {
                     "role": "tool",
                     "tool_call_id": call.id,
-                    "content": result[:4000],
+                    "content": render_tool_result_for_agent(result[:4000]),
                 }
             )
             no_progress_steps = exploration.observe(call, execution)

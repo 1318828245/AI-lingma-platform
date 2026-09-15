@@ -14,7 +14,7 @@ from app.agents.tools import edit_file, list_files, read_file, write_file
 from app.core.database import SessionLocal
 from app.prompts import render_prompt
 from app.services.chat_log import save_generation_event
-from app.services.agent_context import render_context_for_agent
+from app.services.agent_context import render_context_for_agent, render_tool_result_for_agent
 from app.services.events import get_broker
 from app.services.llm import LLMClient
 
@@ -117,7 +117,12 @@ async def run_modification_agent(
     llm = LLMClient()
     workspace = Path(state["workspace"])
     workspace.mkdir(parents=True, exist_ok=True)
-    user_prompt = state["instruction"] + render_context_for_agent(state.get("context_package", {}))
+    user_prompt = (
+        "[USER PRODUCT REQUEST]\n"
+        f"{state['instruction']}\n"
+        "[END USER PRODUCT REQUEST]"
+        + render_context_for_agent(state.get("context_package", {}))
+    )
     messages: list[dict] = [
         {"role": "system", "content": _system_prompt(state)},
         {"role": "user", "content": user_prompt},
@@ -203,7 +208,7 @@ async def run_modification_agent(
                     f"连续 {no_progress_steps} 次重复探索且结果未变化。工作区已保留，请根据最后一次工具结果继续或补充目标。"
                 )
             await _emit(state, {"type": "tool_call_completed", "tool": call.name, "tool_call_id": call.id, "ok": result.ok, "detail": display_detail(call), "result_summary": result_hint(call, result), "error": error_hint(result)})
-            messages.append({"role": "tool", "tool_call_id": call.id, "content": result.to_message_content()})
+            messages.append({"role": "tool", "tool_call_id": call.id, "content": render_tool_result_for_agent(result.to_message_content())})
     raise AgentBudgetPaused(
         f"已使用完 {max_model_steps} 个模型决策轮次。工作区已保留，请提交新的修改任务"
     )
