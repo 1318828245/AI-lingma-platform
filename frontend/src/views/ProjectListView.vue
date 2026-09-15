@@ -104,6 +104,10 @@ const visibleProjects = computed(() => projects.value.slice(0, 8));
 const thumbState = ref<Record<number, "loading" | "ok" | "error" | "unavailable">>({});
 const deleting = ref<Record<number, boolean>>({});
 const thumbRequested = ref<Record<number, boolean>>({});
+// A status request is distinct from requesting an image.  Failed or unbuilt
+// projects have no image request, so using only thumbRequested caused the
+// function ref / observer to query them again on every card re-render.
+const thumbChecked = ref<Record<number, boolean>>({});
 const thumbVersions = ref<Record<number, number>>({});
 const thumbForce = ref<Record<number, boolean>>({});
 let thumbnailObserver: IntersectionObserver | undefined;
@@ -129,7 +133,8 @@ function thumbLabel(projectId: number) {
   return "项目预览";
 }
 async function requestThumb(projectId: number, force = false) {
-  if (!Number.isFinite(projectId) || (thumbRequested.value[projectId] && !force)) return;
+  if (!Number.isFinite(projectId) || (thumbChecked.value[projectId] && !force)) return;
+  thumbChecked.value[projectId] = true;
   thumbState.value[projectId] = "loading";
   thumbRequested.value[projectId] = false;
   try {
@@ -149,6 +154,7 @@ function handleThumbError(projectId: number) { thumbState.value[projectId] = "er
 async function retryThumb(projectId: number) {
   const needsBuild = thumbState.value[projectId] === "unavailable";
   thumbState.value[projectId] = "loading";
+  thumbRequested.value[projectId] = false;
   try {
     if (needsBuild) {
       const result = await rebuildProjectPreview(projectId);
@@ -162,7 +168,7 @@ async function retryThumb(projectId: number) {
     thumbState.value[projectId] = "error";
   }
 }
-function observeProjectCard(projectId: number, element: Element | null) { if (!element || thumbRequested.value[projectId]) return; if (thumbnailObserver) thumbnailObserver.observe(element); else requestThumb(projectId); }
+function observeProjectCard(projectId: number, element: Element | null) { if (!element || thumbChecked.value[projectId] || thumbRequested.value[projectId]) return; if (thumbnailObserver) thumbnailObserver.observe(element); else requestThumb(projectId); }
 function scrollToProjects() { document.getElementById("project-overview")?.scrollIntoView({ behavior: "smooth", block: "start" }); }
 function focusComposer() { promptInput.value?.focus({ preventScroll: true }); promptInput.value?.scrollIntoView({ behavior: "smooth", block: "center" }); }
 async function applyTemplate(prompt: string) { quickPrompt.value = prompt; await nextTick(); focusComposer(); }
