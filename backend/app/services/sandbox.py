@@ -673,4 +673,10 @@ async def validate_build(
     mode = get_settings().build_mode
     if mode == "mock":
         return await _mock_build(workspace, emit)
-    return await _real_build(workspace, emit)
+    try:
+        return await _real_build(workspace, emit)
+    except BuildError as exc:
+        error = str(exc)
+        if emit is not None:
+            await emit(error)
+        return False, [error], [error]

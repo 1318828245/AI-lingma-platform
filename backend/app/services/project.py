@@ -14,6 +14,9 @@ from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.models.deployment import Deployment
 from app.models.asset import AssetJob, ProjectAsset
+from app.models.agent_context import AgentContextSnapshot
+from app.models.agent_memory import AgentMemory
+from app.models.generation_task import GenerationTask
 from app.models.evaluation import Evaluation
 from app.models.file import File
 from app.models.file_version import FileVersion
@@ -193,6 +196,10 @@ def delete_project(db: Session, project: Project) -> None:
         .filter(Generation.project_id == project_id)
         .all()
     ]
+    db.query(AgentContextSnapshot).filter(AgentContextSnapshot.project_id == project_id).delete(synchronize_session=False)
+    db.query(AgentMemory).filter(AgentMemory.project_id == project_id).delete(synchronize_session=False)
+    if generation_ids:
+        db.query(GenerationTask).filter(GenerationTask.generation_id.in_(generation_ids)).delete(synchronize_session=False)
     if session_ids:
         db.query(Message).filter(Message.session_id.in_(session_ids)).delete(
             synchronize_session=False
@@ -202,9 +209,6 @@ def delete_project(db: Session, project: Project) -> None:
         synchronize_session=False
     )
     if generation_ids:
-        db.query(Modification).filter(
-            Modification.generation_id.in_(generation_ids)
-        ).delete(synchronize_session=False)
         db.query(AssetJob).filter(AssetJob.generation_id.in_(generation_ids)).delete(
             synchronize_session=False
         )

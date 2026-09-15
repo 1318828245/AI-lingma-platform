@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from functools import partial
+import logging
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -23,6 +24,8 @@ from app.services.events import get_broker
 from app.services.project import get_owned_project, project_workspace
 from app.services.task_manager import get_task_manager
 from app.services.agent_context import build_context_package, persist_context_snapshot
+
+logger = logging.getLogger(__name__)
 
 
 def add_message(
@@ -231,6 +234,7 @@ async def run_generation_task(generation_id: int) -> None:
             generation_id, {"type": "error", "error": str(exc)}
         )
     except Exception as exc:  # noqa: BLE001 兜底
+        logger.exception("Generation %s failed", generation_id)
         mark_failed(generation_id, f"内部错误: {exc}")
         await broker.publish(
             generation_id, {"type": "error", "error": f"内部错误: {exc}"}

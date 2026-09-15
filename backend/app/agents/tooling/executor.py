@@ -54,6 +54,8 @@ async def execute_tool(call: ToolCall, context: ToolExecutionContext) -> ToolRes
             limit = min(max(int(args.get("max_results") or 30), 1), 80)
             matches = []
             for path in list_files(context.workspace):
+                if path.split("/", 1)[0] in {"dist", "build", ".vite"}:
+                    continue
                 if len(matches) >= limit:
                     break
                 try:

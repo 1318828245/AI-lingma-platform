@@ -140,7 +140,7 @@
                       v-else
                       :name="item.ok === false ? 'alert' : toolIcon(item.tool)"
                     />
-                    <span class="mono tool-name">{{ toolLabel(item.tool) }}</span>
+                    <span class="mono tool-name">{{ toolLabel(item.tool) }}<small v-if="item.count && item.count > 1"> ×{{ item.count }}</small></span>
                     <span v-if="item.pending" class="entry-hint">调用中…</span>
                     <span v-else-if="item.detail" class="entry-detail mono">
                       {{ item.detail }}
@@ -247,6 +247,8 @@
             </template>
           </div>
 
+          <div class="composer-dock">
+            <PlanChecklist v-if="activePlan" :plan="activePlan" :collapsed="planCollapsed" @toggle="planCollapsed = !planCollapsed" />
           <div class="input-row">
             <el-input
               v-model="requirement"
@@ -275,6 +277,7 @@
               </el-button>
               <span class="mono input-hint">Enter 发送 · Shift+Enter 换行</span>
             </div>
+          </div>
           </div>
         </section>
       </aside>
@@ -414,12 +417,14 @@ import VersionHistory from "../components/VersionHistory.vue";
 import MarkdownView from "../components/MarkdownView.vue";
 import StageRail from "../components/StageRail.vue";
 import ToolIcon from "../components/ToolIcon.vue";
+import PlanChecklist from "../components/PlanChecklist.vue";
 import {
   cancelGeneration,
   createGeneration,
   generationEventUrl,
   getActiveGeneration,
   getGeneration,
+  getGenerationPlan,
   getStackAdvice,
 } from "../api/generations";
 import {
@@ -439,6 +444,7 @@ import { acceptProjectVersion, undoProjectVersion } from "../api/versions";
 import type {
   ElementSnapshot,
   Generation,
+  GenerationPlan,
   Message,
   Modification,
   Project,
@@ -482,6 +488,7 @@ interface ChatEntry {
     error?: string;
     content?: string;
     codeOpen?: boolean;
+    count?: number;
   }>;
 }
 
@@ -492,6 +499,10 @@ const projectId = Number(route.params.id);
 const project = ref<Project | null>(null);
 const requirement = ref("");
 const entries = ref<ChatEntry[]>([]);
+// The plan belongs to the composer, independently of chat replay/streaming.
+const activePlan = ref<GenerationPlan | null>(null);
+const planCollapsed = ref(false);
+let selectedPlanGenerationId = 0;
 const runningGen = ref<Generation | null>(null);
 const runningModification = ref<Modification | null>(null);
 const activeSessionId = ref<number | undefined>();
@@ -787,6 +798,8 @@ function toolLabel(tool?: string) {
     edit_file: "修改文件",
     run_command: "运行命令",
     read_file: "读取文件",
+    read_files: "批量读取",
+    search_codebase: "搜索代码",
     list_files: "读取目录",
     finish: "完成",
     file: "写入文件",
@@ -797,7 +810,7 @@ function toolLabel(tool?: string) {
 function toolIcon(tool?: string) {
   if (tool === "write_file" || tool === "edit_file") return "pencil";
   if (tool === "run_command") return "terminal";
-  if (tool === "read_file" || tool === "list_files") return "folder";
+  if (tool === "read_file" || tool === "read_files" || tool === "list_files" || tool === "search_codebase") return "folder";
   if (tool === "finish") return "flag";
   if (tool === "file") return "check";
   return "info";
@@ -874,6 +887,53 @@ async function reloadHistory() {
   const history = (await listMessages(activeSessionId.value)) as Message[];
   seq = 0;
   entries.value = historyToEntries(history);
+  const latestPlan = [...history].reverse().find(message => message.msg_type === "plan")?.tool_call_json as GenerationPlan | undefined;
+  if (latestPlan?.generation_id && Array.isArray(latestPlan.tasks)) {
+    // A persisted creation snapshot must not replace newer live progress.
+    if (!activePlan.value || latestPlan.generation_id > activePlan.value.generation_id) updatePlan(latestPlan);
+    await refreshPlan(latestPlan.generation_id);
+  }
+}
+
+function toolDetail(args: Record<string, unknown>) {
+  if (typeof args.path === "string") return args.path;
+  if (typeof args.query === "string") return `“${args.query}”`;
+  if (Array.isArray(args.command)) return args.command.join(" ");
+  return "";
+}
+
+function appendToolItem(tool: string, detail: string, pending: boolean) {
+  let group = lastEntry();
+  if (group?.kind !== "tools") group = push({ kind: "tools", items: [] });
+  const previous = group.items?.[group.items.length - 1];
+  if (previous && previous.tool === tool && previous.detail === detail && !previous.pending) {
+    previous.count = (previous.count || 1) + 1;
+    previous.pending = pending;
+    return previous;
+  }
+  const item: NonNullable<ChatEntry["items"]>[number] = { tool, detail, pending, count: 1 };
+  group.items?.push(item);
+  return item;
+}
+
+const planRevisions = new Map<number, number>();
+function updatePlan(plan: GenerationPlan) {
+  if (!plan.tasks?.length) return;
+  if (plan.generation_id < selectedPlanGenerationId) return;
+  selectedPlanGenerationId = plan.generation_id;
+  planRevisions.set(plan.generation_id, (planRevisions.get(plan.generation_id) || 0) + 1);
+  if (activePlan.value?.generation_id !== plan.generation_id) planCollapsed.value = false;
+  activePlan.value = plan;
+}
+
+async function refreshPlan(id: number) {
+  const revision = planRevisions.get(id) || 0;
+  try {
+    const plan = await getGenerationPlan(id);
+    if ((planRevisions.get(id) || 0) === revision) updatePlan(plan);
+  } catch {
+    // Keep the persisted plan visible when a refresh is temporarily unavailable.
+  }
 }
 
 async function reloadAgentContexts() {
@@ -950,6 +1010,10 @@ function historyToEntries(history: Message[]): ChatEntry[] {
     if (m.msg_type === "think") {
       currentTools = null;
       list.push({ id: ++seq, kind: "think", content: m.content, collapsed: true });
+      continue;
+    }
+    if (m.msg_type === "plan") {
+      currentTools = null;
       continue;
     }
     if (m.msg_type === "tool_call") {
@@ -1048,6 +1112,10 @@ async function submitRequirement(options: { forceGeneration?: boolean } = {}) {
     const gen = await createGeneration(projectId, text);
     requirement.value = "";
     runningGen.value = gen;
+    activeSessionId.value = gen.session_id;
+    selectedPlanGenerationId = gen.id;
+    activePlan.value = null;
+    planCollapsed.value = false;
     generationActive.value = true;
     previewError.value = "";
     progressStage.value = "plan";
@@ -1182,16 +1250,13 @@ function watchModification(modificationId: number) {
   modificationEventSource.addEventListener("tool_call_started", (event) => {
     const data = parse(event); const tool = String(data.tool || "");
     const args = (data.args || {}) as Record<string, unknown>;
-    const detail = typeof args.path === "string" ? args.path : Array.isArray(args.command) ? args.command.join(" ") : "";
-    let group = lastEntry();
-    if (group?.kind !== "tools") group = push({ kind: "tools", items: [] });
-    group.items?.push({ tool, detail, pending: true });
+    appendToolItem(tool, toolDetail(args), true);
   });
   modificationEventSource.addEventListener("tool_call_completed", (event) => {
     const data = parse(event); const tool = String(data.tool || "");
     for (const entry of [...entries.value].reverse()) {
       const item = entry.kind === "tools" ? [...(entry.items || [])].reverse().find((candidate) => candidate.tool === tool && candidate.pending) : undefined;
-      if (item) { item.pending = false; item.ok = data.ok !== false; item.error = data.error ? String(data.error) : undefined; if (!item.detail && data.detail) item.detail = String(data.detail); break; }
+      if (item) { item.pending = false; item.ok = data.ok !== false; item.error = data.error ? String(data.error) : undefined; if (!item.detail && data.detail) item.detail = String(data.detail); if (data.result_summary) item.detail = `${item.detail}${item.detail ? " · " : ""}${String(data.result_summary)}`; break; }
     }
   });
   modificationEventSource.addEventListener("file_written", (event) => {
@@ -1264,6 +1329,12 @@ async function undoModification(entry: ChatEntry) {
 function watchGeneration(genId: number) {
   eventSource?.close();
   eventSource = new EventSource(generationEventUrl(genId));
+  eventSource.addEventListener("open", () => { void refreshPlan(genId); });
+  for (const type of ["plan_created", "plan_updated"]) {
+    eventSource.addEventListener(type, (event) => {
+      updatePlan(JSON.parse((event as MessageEvent).data) as GenerationPlan);
+    });
+  }
 
   eventSource.addEventListener("stage", (e) => {
     const event = JSON.parse((e as MessageEvent).data) as SseEvent;
@@ -1303,14 +1374,7 @@ function watchGeneration(genId: number) {
     const event = JSON.parse((e as MessageEvent).data) as SseEvent;
     const tool = String(event.tool || "");
     const args = (event.args || {}) as Record<string, unknown>;
-    let detail = "";
-    if (typeof args.path === "string") detail = args.path;
-    else if (Array.isArray(args.command)) detail = args.command.join(" ");
-    let group = lastEntry();
-    if (group?.kind !== "tools") {
-      group = push({ kind: "tools", items: [] });
-    }
-    group.items?.push({ tool, detail, pending: true });
+    appendToolItem(tool, toolDetail(args), true);
     bumpStream();
   });
 
@@ -1326,6 +1390,7 @@ function watchGeneration(genId: number) {
         item.pending = false;
         item.ok = event.ok !== false;
         if (!item.detail && event.detail) item.detail = String(event.detail);
+        if (event.result_summary) item.detail = `${item.detail}${item.detail ? " · " : ""}${String(event.result_summary)}`;
         item.error = event.error ? String(event.error) : undefined;
         break;
       }
@@ -1338,14 +1403,7 @@ function watchGeneration(genId: number) {
     const event = JSON.parse((e as MessageEvent).data) as SseEvent;
     const tool = String(event.tool || "");
     const args = (event.args || {}) as Record<string, unknown>;
-    let detail = "";
-    if (typeof args.path === "string") detail = args.path;
-    else if (Array.isArray(args.command)) detail = args.command.join(" ");
-    let group = lastEntry();
-    if (group?.kind !== "tools") {
-      group = push({ kind: "tools", items: [] });
-    }
-    group.items?.push({ tool, detail, pending: false, ok: true });
+    appendToolItem(tool, toolDetail(args), false).ok = true;
     bumpStream();
   });
 
@@ -1428,6 +1486,7 @@ function watchGeneration(genId: number) {
   });
 
   eventSource.addEventListener("error", (e) => {
+    if (!(e instanceof MessageEvent)) return;
     endStreaming();
     const event = JSON.parse((e as MessageEvent).data) as SseEvent;
     const error = String(event.error || "任务失败了");
@@ -1459,6 +1518,7 @@ async function refreshStatus(genId?: number) {
   if (!id) return;
   const gen = await getGeneration(id);
   runningGen.value = gen;
+  await refreshPlan(id);
   if (["succeeded", "failed", "cancelled", "timed_out", "interrupted"].includes(gen.status)) {
     generationActive.value = false;
   }
@@ -1495,6 +1555,13 @@ async function renameProject() {
 </script>
 
 <style scoped>
+.composer-dock {
+  position: relative;
+  flex-shrink: 0;
+  z-index: 3;
+  background: var(--paper, #fff);
+}
+
 .workspace {
   height: 100vh;
   display: flex;

@@ -20,6 +20,7 @@ from app.schemas.generation import (
 )
 from app.schemas.generation_task import GenerationTaskOut
 from app.services.events import get_broker
+from app.services.generation_tasks import generation_plan
 from app.services.generation import (
     create_generation,
     get_generation_for_user,
@@ -95,6 +96,11 @@ def get_generation(
     db: Session = Depends(get_db),
 ):
     return _gen_out(get_generation_for_user(db, generation_id, user.id))
+
+
+@router.get("/api/generations/{generation_id}/plan")
+def get_generation_plan(generation_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return generation_plan(db, get_generation_for_user(db, generation_id, user.id))
 
 
 @router.get("/api/generations/{generation_id}/tasks", response_model=list[GenerationTaskOut])

@@ -29,7 +29,9 @@ def save_message(
 def save_generation_event(session_id: int, event: dict) -> None:
     """按事件类型映射为会话消息；流式增量与 started 事件不落库（由完成点持久化）。"""
     etype = event.get("type")
-    if etype == "stage":
+    if etype == "plan_created":
+        save_message(session_id, "plan", "实施计划", event)
+    elif etype == "stage":
         save_message(session_id, "stage", str(event.get("stage", "")))
     elif etype == "thought":
         content = str(event.get("content", "")).strip()

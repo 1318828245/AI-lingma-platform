@@ -51,6 +51,19 @@ export interface Generation {
   created_at: string;
 }
 
+export interface GenerationPlan {
+  generation_id: number;
+  status: string;
+  tasks: Array<{
+    id: number;
+    sequence_no: number;
+    title: string;
+    detail: string;
+    status: string;
+    summary: string | null;
+  }>;
+}
+
 export interface Message {
   id: number;
   session_id: number;

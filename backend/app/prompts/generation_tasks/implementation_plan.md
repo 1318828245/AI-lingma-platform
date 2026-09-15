@@ -12,6 +12,6 @@
 
 ## Output contract
 
-只输出合法 JSON 数组，不要 Markdown。返回 4-8 项；每项必须符合：
+只输出合法 JSON 对象，不要 Markdown。顶层格式为 {"steps": [...]}。steps 返回 4-8 项；每项必须符合：
 
 {"step":"动作导向的步骤名","detail":"涉及的页面/文件、实现内容和必要假设","acceptance":"可观察的验收结果"}

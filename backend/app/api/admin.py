@@ -96,7 +96,7 @@ class AdminSettingsIn(BaseModel):
     agent_max_model_steps: int | None = Field(default=None, ge=1, le=500)
     agent_max_tool_calls: int | None = Field(default=None, ge=1, le=2000)
     agent_soft_limit_ratio: float | None = Field(default=None, ge=0.5, le=0.95)
-    agent_max_no_progress_steps: int | None = Field(default=None, ge=2, le=50)
+    agent_max_no_progress_steps: int | None = Field(default=None, ge=2, le=200)
     llm_model: str | None = Field(default=None, min_length=1, max_length=120)
     llm_base_url: str | None = Field(default=None, max_length=500)
     llm_reasoning_effort: str | None = Field(default=None, pattern="^(low|medium|high)$")

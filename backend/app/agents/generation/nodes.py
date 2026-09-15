@@ -21,7 +21,16 @@ from app.services.evaluation import apply_visual_evaluation, evaluate_delivery, 
 from app.services.llm import LLMClient
 from app.services.sandbox import validate_build as run_validate_build
 from app.services.version import snapshot_project
-from app.services.generation_tasks import create_generation_tasks, mark_task
+from app.services.generation_tasks import create_generation_tasks, mark_task, generation_plan
+
+
+async def publish_plan(state: GenerationState, *, created: bool = False) -> None:
+    with SessionLocal() as db:
+        gen = db.get(Generation, state["generation_id"])
+        if gen is None:
+            return
+        event = {"type": "plan_created" if created else "plan_updated", **generation_plan(db, gen)}
+    await publish_event(state, event)
 
 INPUT_BLOCK_PATTERNS = [
     "忽略以上",
@@ -133,12 +142,7 @@ async def create_plan(state: GenerationState) -> dict:
             create_generation_tasks(db, gen.id, plan)
             db.commit()
     await publish_event(state, {"type": "stage", "stage": "plan"})
-    steps_text = "；".join(
-        f"{idx + 1}. {step.get('step', '')}" for idx, step in enumerate(plan[:8])
-    )
-    await publish_event(
-        state, {"type": "thought", "content": f"实施计划：{steps_text}"}
-    )
+    await publish_plan(state, created=True)
     return {"plan": plan, "status": "planned"}
 
 
@@ -440,8 +444,20 @@ async def generate_code(state: GenerationState) -> dict:
         and settings.llm_base_url
         and settings.llm_api_key
     )
-    if llm_real and not state.get("repair_mode"):
+    if llm_real:
         from app.agents.generation.agent import run_generation_agent
+
+        if state.get("repair_mode"):
+            result = await run_generation_agent({**state, "current_task": None})
+            return {
+                "files": result["files"],
+                "summary": result["summary"],
+                "token_usage": {
+                    key: state.get("token_usage", {}).get(key, 0) + result["token_usage"].get(key, 0)
+                    for key in ("prompt_tokens", "completion_tokens")
+                },
+                "status": "repairing",
+            }
 
         total_usage = {"prompt_tokens": 0, "completion_tokens": 0}
         summaries: list[str] = []
@@ -468,13 +484,15 @@ async def generate_code(state: GenerationState) -> dict:
                 mark_task(db, task.id, "running")
                 db.commit()
             await publish_event(state, {"type": "task_started", "task_id": task.id, "title": task.title, "sequence_no": task.sequence_no})
+            await publish_plan(state)
             task_state = {**state, "current_task": {"id": str(task.id), "title": task.title, "detail": task.detail}}
             try:
                 result = await run_generation_agent(task_state)
-            except (AgentBudgetPaused, AgentNeedsReview) as exc:
+            except Exception as exc:
                 with SessionLocal() as db:
                     mark_task(db, task.id, "failed", str(exc))
                     db.commit()
+                await publish_plan(state)
                 raise
             for key in total_usage:
                 total_usage[key] += int(result["token_usage"].get(key, 0))
@@ -483,6 +501,7 @@ async def generate_code(state: GenerationState) -> dict:
                 mark_task(db, task.id, "succeeded", str(result.get("summary") or ""))
                 db.commit()
             await publish_event(state, {"type": "task_completed", "task_id": task.id, "title": task.title, "sequence_no": task.sequence_no})
+            await publish_plan(state)
         return {
             "files": list_files(Path(state["workspace"])),
             "summary": "\n".join(summaries),
@@ -552,7 +571,7 @@ async def validate_build(state: GenerationState) -> dict:
             state,
             {
                 "type": "thought",
-                "content": f"构建失败（第 {attempt} 次），进入修复：{errors[0][:120]}",
+                "content": f"构建失败（第 {attempt} 次），进入修复：{(errors[0] if errors else '未知构建错误')[:120]}",
             },
         )
         return {

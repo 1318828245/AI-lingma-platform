@@ -152,7 +152,10 @@ class LLMClient:
             ],
             json_mode=True,
         )
-        return json.loads(content)
+        parsed = json.loads(content)
+        if not isinstance(parsed, dict) or not isinstance(parsed.get("goal"), str):
+            raise ValueError("模型返回的需求格式无效：缺少 goal 字符串")
+        return parsed
 
     async def create_plan(self, parsed: dict, tech_stack: str) -> list[dict]:
         if self.mode == "mock":
@@ -187,7 +190,15 @@ class LLMClient:
             ],
             json_mode=True,
         )
-        return json.loads(content)
+        plan = json.loads(content)
+        if isinstance(plan, dict):
+            plan = plan.get("steps")
+        if not isinstance(plan, list) or not plan or any(
+            not isinstance(step, dict) or not isinstance(step.get("step"), str)
+            for step in plan
+        ):
+            raise ValueError("模型返回的计划格式无效：需要 steps 数组及 step 字符串")
+        return plan
 
     async def summarize(self, state: dict) -> str:
         if self.mode == "mock":

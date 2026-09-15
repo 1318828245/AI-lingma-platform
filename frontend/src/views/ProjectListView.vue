@@ -53,13 +53,17 @@
           <div v-if="visibleProjects.length" class="project-grid">
             <article v-for="(project, index) in visibleProjects" :key="project.id" class="project-card" :data-project-id="project.id" :ref="(element) => observeProjectCard(project.id, element as Element | null)" role="button" tabindex="0" :style="{ '--delay': `${index * 55}ms` }" @click="openGeneration(project)" @keydown.enter="openGeneration(project)">
               <div class="project-preview">
-                <img v-if="thumbRequested[project.id]" :class="{ visible: thumbState[project.id] === 'ok' }" :src="thumbSrc(project)" :alt="`${project.name} 项目预览`" @load="thumbState[project.id] = 'ok'" @error="thumbState[project.id] = 'error'" />
-                <div v-if="thumbState[project.id] !== 'ok'" class="preview-placeholder"><span>{{ thumbState[project.id] === 'loading' ? '正在生成预览…' : '项目预览' }}</span><i aria-hidden="true">▧</i></div>
+                <img v-if="thumbRequested[project.id]" :class="{ visible: thumbState[project.id] === 'ok' }" :src="thumbSrc(project)" :alt="`${project.name} 项目预览`" @load="thumbState[project.id] = 'ok'" @error="handleThumbError(project.id)" />
+                <div v-if="thumbState[project.id] !== 'ok'" class="preview-placeholder">
+                  <span>{{ thumbLabel(project.id) }}</span>
+                  <button v-if="thumbState[project.id] === 'error' || thumbState[project.id] === 'unavailable'" type="button" class="retry-thumb" @click.stop="retryThumb(project.id)">{{ thumbState[project.id] === 'unavailable' ? '构建预览' : '重试' }}</button>
+                  <i v-else aria-hidden="true">▧</i>
+                </div>
               </div>
               <div class="project-card-top"><span class="type-chip" :class="project.tech_stack.toLowerCase().startsWith('vue') ? 'vue' : 'html'">{{ projectType(project) }}</span><button class="preview-project" type="button" @click.stop="openPreview(project)">预览 <i>↗</i></button></div>
               <h3>{{ project.name }}</h3><p>{{ project.description || '尚未填写项目描述，进入工作区开始创作。' }}</p>
               <footer><span>创建于 {{ formatDate(project.created_at) }}</span><span aria-hidden="true">↗</span></footer>
-              <button class="delete-project" type="button" title="删除项目" @click.stop="remove(project)">删除</button>
+              <button class="delete-project" type="button" title="删除项目" :disabled="deleting[project.id]" @click.stop="remove(project)">{{ deleting[project.id] ? "删除中…" : "删除" }}</button>
             </article>
           </div>
           <div v-else class="empty-projects"><span>✦</span><h3>从一个想法开始</h3><p>在上方输入你的项目需求，AI 会为你创建可继续修改的网页项目。</p></div>
@@ -78,7 +82,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { createProject, deleteProject, listProjects } from "../api/projects";
+import { createProject, deleteProject, getPreviewStatus, listProjects, rebuildProjectPreview } from "../api/projects";
 import { useAuthStore } from "../stores/auth";
 import type { Project } from "../types";
 
@@ -97,9 +101,11 @@ const quickTemplates = [
   { title: "餐厅预约页面", summary: "从氛围展示到在线预约", prompt: "创建一家现代融合餐厅的预约页面：首页有全屏氛围主视觉、餐厅故事、主厨推荐菜单、营业时间和地址；加入可填写日期、人数、姓名和联系方式的预约表单，并在提交后显示明确的成功提示。风格要温暖精致，以墨绿、米白和金色为主，排版有杂志感，移动端阅读舒适。" },
 ];
 const visibleProjects = computed(() => projects.value.slice(0, 8));
-const thumbState = ref<Record<number, "loading" | "ok" | "error">>({});
+const thumbState = ref<Record<number, "loading" | "ok" | "error" | "unavailable">>({});
+const deleting = ref<Record<number, boolean>>({});
 const thumbRequested = ref<Record<number, boolean>>({});
 const thumbVersions = ref<Record<number, number>>({});
+const thumbForce = ref<Record<number, boolean>>({});
 let thumbnailObserver: IntersectionObserver | undefined;
 
 onMounted(async () => {
@@ -115,8 +121,47 @@ onMounted(async () => {
 onBeforeUnmount(() => thumbnailObserver?.disconnect());
 function projectType(project: Project) { return project.tech_stack.toLowerCase().startsWith("vue") ? "Vue 项目" : "HTML 项目"; }
 function formatDate(value: string) { return new Date(value).toLocaleDateString("zh-CN", { month: "short", day: "numeric" }); }
-function thumbSrc(project: Project) { return `/api/projects/${project.id}/screenshot?token=${encodeURIComponent(auth.accessToken)}&project=${encodeURIComponent(project.slug)}&t=${thumbVersions.value[project.id] || 0}`; }
-function requestThumb(projectId: number) { if (!Number.isFinite(projectId) || thumbRequested.value[projectId]) return; thumbRequested.value[projectId] = true; thumbState.value[projectId] = "loading"; }
+function thumbSrc(project: Project) { return `/api/projects/${project.id}/screenshot?token=${encodeURIComponent(auth.accessToken)}&project=${encodeURIComponent(project.slug)}&force=${thumbForce.value[project.id] ? "true" : "false"}&t=${thumbVersions.value[project.id] || 0}`; }
+function thumbLabel(projectId: number) {
+  if (thumbState.value[projectId] === "loading") return "正在生成截图…";
+  if (thumbState.value[projectId] === "unavailable") return "项目尚未构建完成";
+  if (thumbState.value[projectId] === "error") return "截图生成失败";
+  return "项目预览";
+}
+async function requestThumb(projectId: number, force = false) {
+  if (!Number.isFinite(projectId) || (thumbRequested.value[projectId] && !force)) return;
+  thumbState.value[projectId] = "loading";
+  thumbRequested.value[projectId] = false;
+  try {
+    const status = await getPreviewStatus(projectId);
+    if (status.status !== "ready") {
+      thumbState.value[projectId] = "unavailable";
+      return;
+    }
+    thumbForce.value[projectId] = force;
+    if (force) thumbVersions.value[projectId] = (thumbVersions.value[projectId] || 0) + 1;
+    thumbRequested.value[projectId] = true;
+  } catch {
+    thumbState.value[projectId] = "error";
+  }
+}
+function handleThumbError(projectId: number) { thumbState.value[projectId] = "error"; }
+async function retryThumb(projectId: number) {
+  const needsBuild = thumbState.value[projectId] === "unavailable";
+  thumbState.value[projectId] = "loading";
+  try {
+    if (needsBuild) {
+      const result = await rebuildProjectPreview(projectId);
+      if (!result.ok) {
+        thumbState.value[projectId] = "error";
+        return;
+      }
+    }
+    await requestThumb(projectId, true);
+  } catch {
+    thumbState.value[projectId] = "error";
+  }
+}
 function observeProjectCard(projectId: number, element: Element | null) { if (!element || thumbRequested.value[projectId]) return; if (thumbnailObserver) thumbnailObserver.observe(element); else requestThumb(projectId); }
 function scrollToProjects() { document.getElementById("project-overview")?.scrollIntoView({ behavior: "smooth", block: "start" }); }
 function focusComposer() { promptInput.value?.focus({ preventScroll: true }); promptInput.value?.scrollIntoView({ behavior: "smooth", block: "center" }); }
@@ -135,8 +180,21 @@ async function quickCreate() {
   } catch (error: any) { ElMessage.error(error.response?.data?.detail || "创建失败"); }
 }
 async function remove(project: Project) {
-  await ElMessageBox.confirm(`确定删除项目「${project.name}」？工作区、版本与部署记录会一并清理。`, "删除确认", { type: "warning", confirmButtonText: "删除项目", cancelButtonText: "取消" });
-  await deleteProject(project.id); projects.value = projects.value.filter((item) => item.id !== project.id); ElMessage.success("项目已删除");
+  if (deleting.value[project.id]) return;
+  try {
+    await ElMessageBox.confirm(`确定删除项目「${project.name}」？工作区、版本与部署记录会一并清理。`, "删除确认", { type: "warning", confirmButtonText: "删除项目", cancelButtonText: "取消" });
+  } catch { return; }
+  deleting.value[project.id] = true;
+  try {
+    await deleteProject(project.id);
+    projects.value = projects.value.filter((item) => item.id !== project.id);
+    ElMessage.success("项目已删除");
+  } catch (error: any) {
+    const detail = error.response?.data?.detail;
+    ElMessage.error(typeof detail === "string" ? detail : "删除失败，请稍后重试或查看服务日志");
+  } finally {
+    delete deleting.value[project.id];
+  }
 }
 function logout() { auth.logout(); router.push("/login"); }
 </script>
@@ -151,4 +209,7 @@ function logout() { auth.logout(); router.push("/login"); }
 .hero-flow { display:flex; flex-wrap:wrap; align-items:center; gap:9px; margin-top:24px; color:#697796; font:700 11px/1.2 var(--font-mono); letter-spacing:.02em; } .hero-flow span { padding:7px 9px; border:1px solid #dce3f7; border-radius:8px; background:rgba(255,255,255,.68); } .hero-flow i { color:#90a0d9; font-size:14px; font-style:normal; } .hero-flow button { margin-left:6px; border:0; border-radius:8px; padding:8px 11px; background:#edf0ff; color:#4659bd; font:750 12px var(--font-body); cursor:pointer; transition:.16s ease; } .hero-flow button:hover { background:#dfe5ff; transform:translateX(2px); } .hero-flow b { margin-left:5px; font-size:14px; }
 .template-section { margin-top:22px; padding-top:20px; border-top:1px solid #e8ebf5; } .template-section-head { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:11px; } .template-section-head > span { color:#52617f; font-size:13px; font-weight:750; } .template-section-head small { color:#8792aa; font-size:12px; } .template-grid { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:9px; } .template-card { position:relative; min-width:0; min-height:132px; overflow:hidden; border:1px solid #dce3f5; border-radius:11px; padding:12px; background:linear-gradient(145deg,#fff,#f8f9ff); color:#526181; text-align:left; cursor:pointer; transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease; } .template-card::after { content:""; position:absolute; right:-19px; bottom:-22px; width:65px; height:65px; border:1px solid #dde4fb; border-radius:50%; transition:transform .2s ease; } .template-card:hover,.template-card:focus-visible { z-index:1; border-color:#9daaea; box-shadow:0 10px 22px rgba(54,70,140,.12); outline:none; transform:translateY(-3px); } .template-card:hover::after { transform:scale(1.25); } .template-card > span { display:block; color:#7889d7; font:700 10px var(--font-mono); letter-spacing:.08em; } .template-card strong { display:block; margin-top:7px; color:#354368; font:750 13px/1.25 var(--font-display); } .template-card p { display:-webkit-box; min-height:36px; margin:6px 0 0; overflow:hidden; color:#76829c; font-size:11px; line-height:1.5; -webkit-box-orient:vertical; -webkit-line-clamp:2; } .template-card i { position:absolute; z-index:1; bottom:11px; color:#5369ce; font-size:11px; font-style:normal; font-weight:750; }
 @media (max-width:1160px) { .template-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } } @media (max-width:850px) { .template-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } } @media (max-width:560px) { .hero-flow { gap:6px; } .hero-flow span { padding:6px 7px; font-size:10px; } .hero-flow i { display:none; } .hero-flow button { margin-left:0; } .template-section-head { align-items:flex-start; flex-direction:column; gap:3px; } .template-grid { grid-template-columns:1fr; } .template-card { min-height:106px; } .template-card p { min-height:auto; } }
+.preview-placeholder { gap:8px; }
+.retry-thumb { border:1px solid #aab7ed; border-radius:6px; padding:4px 8px; background:rgba(255,255,255,.82); color:#4e64c8; font-size:11px; font-weight:750; cursor:pointer; }
+.retry-thumb:hover { border-color:#7184dd; background:#fff; }
 </style>

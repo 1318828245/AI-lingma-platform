@@ -8,7 +8,8 @@ from app.agents.budget import AgentBudgetPaused, AgentNeedsReview, get_agent_bud
 from app.agents.tooling.contracts import ToolCall
 from app.agents.tooling.definitions import MODIFICATION_TOOL_NAMES, tool_schemas
 from app.agents.tooling.executor import ToolExecutionContext, execute_tool
-from app.agents.tooling.presentation import display_args, display_detail, error_hint
+from app.agents.tooling.presentation import display_args, display_detail, error_hint, result_hint
+from app.agents.tooling.progress import ExplorationProgress
 from app.agents.tools import edit_file, list_files, read_file, write_file
 from app.core.database import SessionLocal
 from app.prompts import render_prompt
@@ -128,6 +129,7 @@ async def run_modification_agent(
     max_tool_calls = max_tool_calls or budget.max_tool_calls
     tool_calls_used = 0
     no_progress_steps = 0
+    exploration = ExplorationProgress()
     soft_limit_announced = False
 
     async def on_reasoning(piece: str) -> None:
@@ -193,15 +195,14 @@ async def run_modification_agent(
                     on_asset_event=lambda event: _emit(state, event),
                 ),
             )
-            if result.ok and call.name in {"write_file", "write_files", "edit_file", "collect_assets"}:
-                no_progress_steps = 0
-            else:
-                no_progress_steps += 1
-            if no_progress_steps >= budget.max_no_progress_steps:
+            no_progress_steps = exploration.observe(call, result)
+            if no_progress_steps == 2:
+                messages.append({"role": "user", "content": "相同的探索结果重复出现。请改为读取新的候选文件、修改源码，或用 finish 说明无法定位的原因。"})
+            if no_progress_steps >= min(budget.max_no_progress_steps, 6):
                 raise AgentNeedsReview(
-                    f"连续 {no_progress_steps} 次工具调用未产生文件或素材进展。工作区已保留，请创建新的任务"
+                    f"连续 {no_progress_steps} 次重复探索且结果未变化。工作区已保留，请根据最后一次工具结果继续或补充目标。"
                 )
-            await _emit(state, {"type": "tool_call_completed", "tool": call.name, "tool_call_id": call.id, "ok": result.ok, "detail": display_detail(call), "error": error_hint(result)})
+            await _emit(state, {"type": "tool_call_completed", "tool": call.name, "tool_call_id": call.id, "ok": result.ok, "detail": display_detail(call), "result_summary": result_hint(call, result), "error": error_hint(result)})
             messages.append({"role": "tool", "tool_call_id": call.id, "content": result.to_message_content()})
     raise AgentBudgetPaused(
         f"已使用完 {max_model_steps} 个模型决策轮次。工作区已保留，请提交新的修改任务"

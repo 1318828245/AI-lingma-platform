@@ -5,6 +5,17 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from app.models.generation_task import GenerationTask
+from app.models.generation import Generation
+from app.schemas.generation_task import GenerationTaskOut
+
+
+def generation_plan(db: Session, generation: Generation) -> dict:
+    tasks = db.query(GenerationTask).filter_by(generation_id=generation.id).order_by(GenerationTask.sequence_no).all()
+    return {
+        "generation_id": generation.id,
+        "status": generation.status,
+        "tasks": [GenerationTaskOut.model_validate(task).model_dump(mode="json") for task in tasks],
+    }
 
 
 def create_generation_tasks(db: Session, generation_id: int, plan: list[dict]) -> list[GenerationTask]:

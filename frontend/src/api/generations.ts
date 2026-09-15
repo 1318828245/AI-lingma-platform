@@ -1,6 +1,11 @@
 import { api } from "./client";
 import { useAuthStore } from "../stores/auth";
-import type { Generation } from "../types";
+import type { Generation, GenerationPlan } from "../types";
+
+export async function getGenerationPlan(id: number): Promise<GenerationPlan> {
+  const { data } = await api.get(`/generations/${id}/plan`);
+  return data;
+}
 
 export async function createGeneration(
   projectId: number,
